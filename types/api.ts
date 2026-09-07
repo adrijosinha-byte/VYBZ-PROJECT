@@ -97,6 +97,11 @@ export interface CreateRoomRequest {
   gameId: string;
   hostUserId: string;
   displayName: string;
+  settings?: {
+    roundCount?: number;
+    timeLimitSeconds?: number;
+    mode?: string;
+  };
 }
 
 export interface CreateRoomResponse {

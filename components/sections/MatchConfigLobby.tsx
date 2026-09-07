@@ -19,6 +19,7 @@ interface MatchConfigLobbyProps {
   onPlayerNameChange: (name: string) => void;
   onRoomCreatedOrJoined: (room: any) => void;
   onStartMatch: () => void;
+  onLeaveRoom?: () => void;
   playClickSound: () => void;
 }
 
@@ -63,6 +64,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
   onPlayerNameChange,
   onRoomCreatedOrJoined,
   onStartMatch,
+  onLeaveRoom,
   playClickSound,
 }) => {
   const [tab, setTab] = useState<"host" | "join">("host");
@@ -70,7 +72,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
   const [selectedMode, setSelectedMode] = useState<string>("ROM // 001: WHO SAID IT?");
   const [targetPlayers, setTargetPlayers] = useState<number>(4);
   const [timeLimitSeconds, setTimeLimitSeconds] = useState<number>(15);
-  const [joinCodeInput, setJoinCodeInput] = useState<string>("");
+  const [joinSuffix, setJoinSuffix] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
@@ -100,7 +102,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
       const gameRes = await apiClient.generateGame({
         sessionId,
         rom: selectedMode,
-        questionCount: roundCount,
+        questionCount: Math.max(1, Math.min(30, roundCount || 5)),
         userId: playerId,
       });
 
@@ -109,6 +111,11 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
         gameId: gameRes.gameId,
         hostUserId: playerId,
         displayName: playerName.trim(),
+        settings: {
+          roundCount: Math.max(1, Math.min(30, roundCount || 5)),
+          timeLimitSeconds: Math.max(1, Math.min(120, timeLimitSeconds || 15)),
+          mode: selectedMode,
+        },
       });
 
       // 3. Fetch Full Room State
@@ -122,23 +129,38 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
     }
   };
 
+  // Suffix input cleaner (autofills and strips VYBZ- if pasted or typed)
+  const handleSuffixChange = (val: string) => {
+    let clean = val.toUpperCase().trim();
+    if (clean.startsWith("VYBZ-")) {
+      clean = clean.replace(/^VYBZ-/, "");
+    } else if (clean.startsWith("VYBZ")) {
+      clean = clean.replace(/^VYBZ/, "");
+    }
+    clean = clean.replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    setJoinSuffix(clean);
+  };
+
   // Player joins an existing room
   const handleJoinRoom = async () => {
     if (!playerName.trim()) {
       setErrorMessage("Please enter your player nickname first.");
       return;
     }
-    if (!joinCodeInput.trim()) {
-      setErrorMessage("Please enter a valid 8-character Room Code (e.g. VYBZ-4829).");
+    const cleanSuffix = joinSuffix.trim();
+    if (!cleanSuffix) {
+      setErrorMessage("Please enter the 4-character Room Code (e.g. 4829 or 7K4P).");
       return;
     }
     setErrorMessage(null);
     setIsProcessing(true);
     playClickSound();
 
+    const fullCode = `VYBZ-${cleanSuffix}`;
+
     try {
       const joinRes = await apiClient.joinRoom({
-        roomCode: joinCodeInput.trim(),
+        roomCode: fullCode,
         userId: playerId,
         displayName: playerName.trim(),
       });
@@ -146,7 +168,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
       onRoomCreatedOrJoined(room);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || "Failed to join room. Verify the code.");
+      setErrorMessage(err.message || `Failed to join room ${fullCode}. Verify the code.`);
     } finally {
       setIsProcessing(false);
     }
@@ -199,6 +221,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px" }}>
         {/* Section Header */}
         <div
+          className="reveal-fade-up"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -252,6 +275,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
 
         {/* Global Nickname Picker (Required before hosting or joining) */}
         <div
+          className="reveal-fade-up"
           style={{
             background: "#080A0D",
             border: "1px solid var(--border)",
@@ -272,7 +296,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
               type="text"
               value={playerName}
               onChange={(e) => onPlayerNameChange(e.target.value)}
-              placeholder="Enter your name (e.g. Nishant)"
+              placeholder="Enter your name..."
               style={{
                 background: "var(--void)",
                 border: "1px solid var(--border)",
@@ -294,7 +318,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
         {!activeRoom ? (
           <div>
             {/* Host / Join Tabs */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
+            <div className="reveal-fade-up" style={{ display: "flex", gap: 4, marginBottom: 24 }}>
               <button
                 onClick={() => {
                   playClickSound();
@@ -354,6 +378,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
             {tab === "host" ? (
               /* HOST CONFIGURATION PANEL */
               <div
+                className="reveal-fade-up"
                 style={{
                   background: "var(--chassis)",
                   border: "1px solid var(--border)",
@@ -372,36 +397,135 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                       color: "var(--green)",
                       letterSpacing: "0.1em",
                       marginBottom: 8,
+                      display: "flex",
+                      justifyContent: "space-between",
                     }}
                   >
-                    1. NUMBER OF ROUNDS
+                    <span>1. NUMBER OF ROUNDS</span>
+                    <span style={{ color: "var(--txt)", fontWeight: 700 }}>
+                      {roundCount ? `${roundCount} RNDS` : "ENTER..."}
+                    </span>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {[3, 5, 7, 10].map((rounds) => (
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "stretch",
+                      background: "var(--void)",
+                      border: "1px solid var(--border)",
+                      height: 48,
+                      transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", padding: "0 14px", flex: 1 }}>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={roundCount || ""}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setRoundCount(Math.max(1, Math.min(30, val)));
+                          } else {
+                            setRoundCount(0);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!roundCount || roundCount < 1) setRoundCount(5);
+                        }}
+                        placeholder="5"
+                        style={{
+                          width: "100%",
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--green)",
+                          fontFamily: "var(--jb)",
+                          fontSize: 16,
+                          fontWeight: 800,
+                          outline: "none",
+                        }}
+                      />
+                      <span className="jb" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: "0.08em", fontWeight: 700, marginLeft: 8 }}>
+                        ROUNDS
+                      </span>
+                    </div>
+
+                    {/* Custom Up / Down Stepper Arrows */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        width: 36,
+                        borderLeft: "1px solid var(--border)",
+                      }}
+                    >
                       <button
-                        key={rounds}
+                        type="button"
                         onClick={() => {
                           playClickSound();
-                          setRoundCount(rounds);
+                          setRoundCount((prev) => Math.min(30, (prev || 1) + 1));
                         }}
+                        title="Increment rounds (+1)"
                         style={{
                           flex: 1,
-                          padding: "12px 0",
-                          background: roundCount === rounds ? "var(--green)" : "var(--void)",
-                          color: roundCount === rounds ? "#000" : "var(--txt)",
-                          border: `1px solid ${roundCount === rounds ? "var(--green)" : "var(--border)"}`,
-                          fontFamily: "var(--jb)",
-                          fontSize: 13,
-                          fontWeight: 700,
+                          background: "transparent",
+                          border: "none",
+                          borderBottom: "1px solid var(--border)",
+                          color: "var(--muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
                           cursor: "pointer",
+                          transition: "background 0.15s, color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(57,255,20,0.15)";
+                          e.currentTarget.style.color = "var(--green)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "var(--muted)";
                         }}
                       >
-                        {rounds}
+                        ▲
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClickSound();
+                          setRoundCount((prev) => Math.max(1, (prev || 1) - 1));
+                        }}
+                        title="Decrement rounds (-1)"
+                        style={{
+                          flex: 1,
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
+                          cursor: "pointer",
+                          transition: "background 0.15s, color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(57,255,20,0.15)";
+                          e.currentTarget.style.color = "var(--green)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "var(--muted)";
+                        }}
+                      >
+                        ▼
+                      </button>
+                    </div>
                   </div>
-                  <div className="jb" style={{ fontSize: 9, color: "var(--muted)", marginTop: 6 }}>
-                    Standard tournament: 5 rounds
+
+                  <div className="jb" style={{ fontSize: 9, color: "var(--muted)", marginTop: 8 }}>
+                    Custom tournament: 1 to 30 rounds
                   </div>
                 </div>
 
@@ -414,36 +538,135 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                       color: "var(--green)",
                       letterSpacing: "0.1em",
                       marginBottom: 8,
+                      display: "flex",
+                      justifyContent: "space-between",
                     }}
                   >
-                    2. TIME LIMIT PER QUESTION
+                    <span>2. TIME LIMIT PER QUESTION</span>
+                    <span style={{ color: "var(--yellow)", fontWeight: 700 }}>
+                      {timeLimitSeconds ? `${timeLimitSeconds}S` : "ENTER..."}
+                    </span>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {[10, 15, 20, 30].map((sec) => (
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "stretch",
+                      background: "var(--void)",
+                      border: "1px solid var(--border)",
+                      height: 48,
+                      transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", padding: "0 14px", flex: 1 }}>
+                      <input
+                        type="number"
+                        min={1}
+                        max={120}
+                        value={timeLimitSeconds || ""}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setTimeLimitSeconds(Math.min(120, val));
+                          } else {
+                            setTimeLimitSeconds(0);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!timeLimitSeconds || timeLimitSeconds < 1) setTimeLimitSeconds(15);
+                        }}
+                        placeholder="15"
+                        style={{
+                          width: "100%",
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--yellow)",
+                          fontFamily: "var(--jb)",
+                          fontSize: 16,
+                          fontWeight: 800,
+                          outline: "none",
+                        }}
+                      />
+                      <span className="jb" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: "0.08em", fontWeight: 700, marginLeft: 8 }}>
+                        SECS
+                      </span>
+                    </div>
+
+                    {/* Custom Up / Down Stepper Arrows */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        width: 36,
+                        borderLeft: "1px solid var(--border)",
+                      }}
+                    >
                       <button
-                        key={sec}
+                        type="button"
                         onClick={() => {
                           playClickSound();
-                          setTimeLimitSeconds(sec);
+                          setTimeLimitSeconds((prev) => Math.min(120, (prev || 15) + (prev && prev < 5 ? 1 : 5)));
                         }}
+                        title="Increment time (+5s)"
                         style={{
                           flex: 1,
-                          padding: "12px 0",
-                          background: timeLimitSeconds === sec ? "var(--yellow)" : "var(--void)",
-                          color: timeLimitSeconds === sec ? "#000" : "var(--txt)",
-                          border: `1px solid ${timeLimitSeconds === sec ? "var(--yellow)" : "var(--border)"}`,
-                          fontFamily: "var(--jb)",
-                          fontSize: 13,
-                          fontWeight: 700,
+                          background: "transparent",
+                          border: "none",
+                          borderBottom: "1px solid var(--border)",
+                          color: "var(--muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
                           cursor: "pointer",
+                          transition: "background 0.15s, color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255,208,0,0.15)";
+                          e.currentTarget.style.color = "var(--yellow)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "var(--muted)";
                         }}
                       >
-                        {sec}s
+                        ▲
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClickSound();
+                          setTimeLimitSeconds((prev) => Math.max(1, (prev || 15) - (prev && prev <= 5 ? 1 : 5)));
+                        }}
+                        title="Decrement time (-5s)"
+                        style={{
+                          flex: 1,
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
+                          cursor: "pointer",
+                          transition: "background 0.15s, color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(255,208,0,0.15)";
+                          e.currentTarget.style.color = "var(--yellow)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "var(--muted)";
+                        }}
+                      >
+                        ▼
+                      </button>
+                    </div>
                   </div>
-                  <div className="jb" style={{ fontSize: 9, color: "var(--muted)", marginTop: 6 }}>
-                    Faster answers yield +250 speed bonus points
+
+                  <div className="jb" style={{ fontSize: 9, color: "var(--muted)", marginTop: 8 }}>
+                    Faster answers yield speed bonus points
                   </div>
                 </div>
 
@@ -456,35 +679,134 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                       color: "var(--green)",
                       letterSpacing: "0.1em",
                       marginBottom: 8,
+                      display: "flex",
+                      justifyContent: "space-between",
                     }}
                   >
-                    3. EXPECTED PLAYERS
+                    <span>3. EXPECTED PLAYERS</span>
+                    <span style={{ color: "var(--txt)", fontWeight: 700 }}>
+                      {targetPlayers === 1 ? "SOLO" : `${targetPlayers || 1} PLAYERS`}
+                    </span>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {[1, 2, 4, 6, 8].map((count) => (
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "stretch",
+                      background: "var(--void)",
+                      border: "1px solid var(--border)",
+                      height: 48,
+                      transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", padding: "0 14px", flex: 1 }}>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={targetPlayers || ""}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setTargetPlayers(Math.max(1, Math.min(100, val)));
+                          } else {
+                            setTargetPlayers(0);
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!targetPlayers || targetPlayers < 1) setTargetPlayers(4);
+                        }}
+                        placeholder="4"
+                        style={{
+                          width: "100%",
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--txt)",
+                          fontFamily: "var(--jb)",
+                          fontSize: 16,
+                          fontWeight: 800,
+                          outline: "none",
+                        }}
+                      />
+                      <span className="jb" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: "0.08em", fontWeight: 700, marginLeft: 8 }}>
+                        PLAYERS
+                      </span>
+                    </div>
+
+                    {/* Custom Up / Down Stepper Arrows */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        width: 36,
+                        borderLeft: "1px solid var(--border)",
+                      }}
+                    >
                       <button
-                        key={count}
+                        type="button"
                         onClick={() => {
                           playClickSound();
-                          setTargetPlayers(count);
+                          setTargetPlayers((prev) => Math.min(100, (prev || 1) + 1));
                         }}
+                        title="Increment player count (+1)"
                         style={{
                           flex: 1,
-                          padding: "12px 0",
-                          background: targetPlayers === count ? "rgba(255,255,255,0.15)" : "var(--void)",
-                          color: "var(--txt)",
-                          border: `1px solid ${targetPlayers === count ? "var(--txt)" : "var(--border)"}`,
-                          fontFamily: "var(--jb)",
-                          fontSize: 13,
-                          fontWeight: 700,
+                          background: "transparent",
+                          border: "none",
+                          borderBottom: "1px solid var(--border)",
+                          color: "var(--muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
                           cursor: "pointer",
+                          transition: "background 0.15s, color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(57,255,20,0.15)";
+                          e.currentTarget.style.color = "var(--green)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "var(--muted)";
                         }}
                       >
-                        {count === 1 ? "SOLO" : `${count}P`}
+                        ▲
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClickSound();
+                          setTargetPlayers((prev) => Math.max(1, (prev || 1) - 1));
+                        }}
+                        title="Decrement player count (-1)"
+                        style={{
+                          flex: 1,
+                          background: "transparent",
+                          border: "none",
+                          color: "var(--muted)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 9,
+                          cursor: "pointer",
+                          transition: "background 0.15s, color 0.15s",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(57,255,20,0.15)";
+                          e.currentTarget.style.color = "var(--green)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.color = "var(--muted)";
+                        }}
+                      >
+                        ▼
+                      </button>
+                    </div>
                   </div>
-                  <div className="jb" style={{ fontSize: 9, color: "var(--muted)", marginTop: 6 }}>
+
+                  <div className="jb" style={{ fontSize: 9, color: "var(--muted)", marginTop: 8 }}>
                     Any device with the link can join
                   </div>
                 </div>
@@ -503,6 +825,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                     4. SELECT ARCADE GAME MODE
                   </div>
                   <div
+                    className="reveal-stagger-group"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
@@ -518,6 +841,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                             playClickSound();
                             setSelectedMode(mode.id);
                           }}
+                          className="reveal-stagger-item"
                           style={{
                             background: isSelected ? "rgba(57,255,20,0.08)" : "var(--void)",
                             border: `1px solid ${isSelected ? "var(--green)" : "var(--border)"}`,
@@ -592,46 +916,94 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                     color: "var(--yellow)",
                     letterSpacing: "0.1em",
                     marginBottom: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
                   }}
                 >
-                  ENTER 8-CHARACTER ROOM CODE
+                  <span className="led led-y pulse-y" />
+                  <span>ENTER ROOM CODE // PREFIX &quot;VYBZ-&quot; AUTO-ATTACHED</span>
                 </div>
-                <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-                  <input
-                    type="text"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    placeholder="E.G. VYBZ-4920"
+
+                <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+                  {/* Fused Arcade Prefix & Suffix Input */}
+                  <div
                     style={{
+                      display: "flex",
+                      alignItems: "stretch",
                       flex: 1,
+                      minWidth: 260,
                       background: "var(--void)",
-                      border: "1px solid var(--border)",
-                      color: "var(--yellow)",
-                      fontFamily: "var(--jb)",
-                      fontSize: 18,
-                      fontWeight: 700,
-                      letterSpacing: "0.15em",
-                      padding: "12px 18px",
-                      outline: "none",
+                      border: "1px solid var(--yellow)",
+                      boxShadow: "0 0 12px rgba(255,208,0,0.12)",
                     }}
-                  />
+                  >
+                    {/* Fixed Non-Editable Autofilled VYBZ- Badge */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "12px 16px",
+                        background: "rgba(255,208,0,0.12)",
+                        borderRight: "1px solid rgba(255,208,0,0.3)",
+                        color: "var(--yellow)",
+                        fontFamily: "var(--jb)",
+                        fontSize: 18,
+                        fontWeight: 900,
+                        letterSpacing: "0.1em",
+                        userSelect: "none",
+                      }}
+                    >
+                      VYBZ-
+                    </div>
+
+                    {/* Suffix Input */}
+                    <input
+                      type="text"
+                      value={joinSuffix}
+                      onChange={(e) => handleSuffixChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && joinSuffix.trim()) {
+                          handleJoinRoom();
+                        }
+                      }}
+                      placeholder="XXXX"
+                      maxLength={4}
+                      autoFocus={tab === "join"}
+                      style={{
+                        flex: 1,
+                        background: "transparent",
+                        border: "none",
+                        color: "#FFFFFF",
+                        fontFamily: "var(--jb)",
+                        fontSize: 20,
+                        fontWeight: 800,
+                        letterSpacing: "0.22em",
+                        padding: "12px 16px",
+                        outline: "none",
+                        textTransform: "uppercase",
+                      }}
+                    />
+                  </div>
+
                   <button
                     onClick={handleJoinRoom}
-                    disabled={isProcessing}
+                    disabled={isProcessing || !joinSuffix.trim()}
                     className="btn-green"
                     style={{
                       padding: "0 28px",
                       fontSize: 12,
-                      fontWeight: 700,
+                      fontWeight: 800,
                       letterSpacing: "0.1em",
-                      cursor: "pointer",
+                      cursor: isProcessing || !joinSuffix.trim() ? "not-allowed" : "pointer",
+                      opacity: !joinSuffix.trim() ? 0.6 : 1,
                     }}
                   >
                     {isProcessing ? "CONNECTING..." : "ENTER ROOM →"}
                   </button>
                 </div>
                 <p className="jb" style={{ fontSize: 10, color: "var(--muted)", margin: 0 }}>
-                  Enter the code displayed on the host device. Both devices must be on the same network or connected to the server.
+                  Just type or paste the 4-character room suffix shown on the host device (e.g. 4829 or 7K4P). &quot;VYBZ-&quot; is automatically filled.
                 </p>
               </div>
             )}
@@ -645,6 +1017,60 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
               padding: "28px",
             }}
           >
+            {/* Top Exit / Disband Navigation */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 20,
+                paddingBottom: 16,
+                borderBottom: "1px solid var(--border)",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  onLeaveRoom?.();
+                }}
+                className="jb"
+                style={{
+                  background: "rgba(255,51,75,0.08)",
+                  border: "1px solid var(--red)",
+                  color: "var(--red)",
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.1em",
+                  padding: "8px 16px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  transition: "all 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--red)";
+                  e.currentTarget.style.color = "#000";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,51,75,0.08)";
+                  e.currentTarget.style.color = "var(--red)";
+                }}
+              >
+                <span>←</span>
+                <span>{isHost ? "DISBAND ROOM // GO BACK TO MAIN PAGE" : "LEAVE ROOM // RETURN TO MAIN PAGE"}</span>
+              </button>
+
+              <div className="jb" style={{ fontSize: 9, color: "var(--muted)" }}>
+                {isHost
+                  ? "Created by mistake? Click to return to setup and join a room instead."
+                  : "Need to leave? Click to return to main menu."}
+              </div>
+            </div>
+
             {/* Room Banner & Share Link */}
             <div
               style={{
@@ -770,23 +1196,49 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
             {/* Match Launch or Waiting for Host */}
             <div>
               {isHost ? (
-                <button
-                  onClick={() => {
-                    playClickSound();
-                    onStartMatch();
-                  }}
-                  className="btn-green"
-                  style={{
-                    width: "100%",
-                    padding: "18px 24px",
-                    fontSize: 14,
-                    fontWeight: 800,
-                    letterSpacing: "0.15em",
-                    cursor: "pointer",
-                  }}
-                >
-                  START MATCH ON ALL CONNECTED DEVICES →
-                </button>
+                <div>
+                  <button
+                    onClick={() => {
+                      playClickSound();
+                      onStartMatch();
+                    }}
+                    className="btn-green"
+                    style={{
+                      width: "100%",
+                      padding: "18px 24px",
+                      fontSize: 14,
+                      fontWeight: 800,
+                      letterSpacing: "0.15em",
+                      cursor: "pointer",
+                    }}
+                  >
+                    START MATCH ON ALL CONNECTED DEVICES →
+                  </button>
+
+                  <div style={{ marginTop: 14, textAlign: "center" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        onLeaveRoom?.();
+                      }}
+                      className="jb"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--muted)",
+                        fontSize: 10,
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        letterSpacing: "0.06em",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--txt)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}
+                    >
+                      Created this room by accident? Disband room &amp; return to Join / Setup
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div
                   style={{
@@ -810,6 +1262,30 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                   >
                     <span className="led led-y pulse-y" />
                     CONNECTED TO HOST // WAITING FOR HOST TO START ROUND 01...
+                  </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        onLeaveRoom?.();
+                      }}
+                      className="jb"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--muted)",
+                        fontSize: 10,
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        letterSpacing: "0.06em",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = "var(--txt)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = "var(--muted)")}
+                    >
+                      Joined by accident? Leave this room &amp; return to main page
+                    </button>
                   </div>
                 </div>
               )}

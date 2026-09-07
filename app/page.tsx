@@ -11,6 +11,10 @@ import { apiClient } from "@/lib/api-client";
 import { Barcode } from "@/components/ui/Barcode";
 import { CrtOverlay } from "@/components/ui/CrtOverlay";
 import { CustomCursor } from "@/components/ui/CustomCursor";
+import { VybzBootScreen } from "@/components/ui/VybzBootScreen";
+import { ArcadeFooter } from "@/components/ui/ArcadeFooter";
+import { RetroGlitchHeadline } from "@/components/ui/RetroGlitchHeadline";
+import { HeroInteractiveBackground } from "@/components/ui/HeroInteractiveBackground";
 import { CHAT_PRESETS } from "@/lib/mock-data/chat-presets";
 import { DocumentSelector } from "@/components/sections/DocumentSelector";
 import { MatchConfigLobby } from "@/components/sections/MatchConfigLobby";
@@ -105,7 +109,7 @@ const snd = new SndEngine();
 export default function VybzMainPage() {
   // ── LOCAL PLAYER IDENTITY ────────────────────────────────────────────────
   const [playerId, setPlayerId] = useState<string>("");
-  const [playerName, setPlayerName] = useState<string>("Nishant");
+  const [playerName, setPlayerName] = useState<string>("");
   const [coins, setCoins] = useState<number>(2);
   const [muted, setMuted] = useState<boolean>(false);
   const [activeSectionId, setActiveSectionId] = useState<string>("hero");
@@ -126,6 +130,8 @@ export default function VybzMainPage() {
   });
 
   const [activeRoom, setActiveRoom] = useState<any | null>(null);
+  const [bootKey, setBootKey] = useState<number>(0);
+  const [isBootActive, setIsBootActive] = useState<boolean>(true);
 
   // DOM Refs for animations
   const heroTaglineRef = useRef<HTMLDivElement>(null);
@@ -144,16 +150,22 @@ export default function VybzMainPage() {
     setPlayerId(pid);
 
     const savedName = localStorage.getItem("vybz_player_name");
-    if (savedName) {
+    if (savedName && savedName !== "Nishant") {
       setPlayerName(savedName);
+    } else if (savedName === "Nishant") {
+      localStorage.removeItem("vybz_player_name");
+      setPlayerName("");
     }
 
-    // Check for room code query param in URL (?room=VYBZ-XXXX)
+    // Check for room code query param in URL (?room=VYBZ-XXXX or ?room=XXXX)
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get("room");
     if (roomParam) {
+      const codeToFetch = roomParam.toUpperCase().startsWith("VYBZ-")
+        ? roomParam.toUpperCase()
+        : `VYBZ-${roomParam.toUpperCase()}`;
       apiClient
-        .getRoom(roomParam.toUpperCase(), pid)
+        .getRoom(codeToFetch, pid)
         .then((room) => {
           setActiveRoom(room);
           setTelemetryStatus(`● ROOM: ${room.roomCode || room.code}`);
@@ -190,7 +202,11 @@ export default function VybzMainPage() {
   // Smooth scroll helper
   const scrollTo = (id: string) => {
     snd.click();
-    const el = document.getElementById(id);
+    let targetId = id;
+    if (id === "section-lobby" && isMatchActive) {
+      targetId = "section-trivia-arena";
+    }
+    const el = document.getElementById(targetId);
     if (el) {
       el.scrollIntoView({ behavior: "smooth" });
     }
@@ -204,7 +220,7 @@ export default function VybzMainPage() {
 
     const isFinished =
       activeRoom?.status === "FINISHED" || activeRoom?.status === "MATCH_OVER";
-    const intervalMs = isFinished ? 4000 : 1500;
+    const intervalMs = isFinished ? 4000 : 800;
 
     const pollInterval = setInterval(async () => {
       try {
@@ -256,12 +272,22 @@ export default function VybzMainPage() {
     playerId,
   ]);
 
-  // Initial Hero animations
-  useEffect(() => {
-    if (heroTaglineRef.current) {
-      scrambleText(heroTaglineRef.current, "YOUR CHATS BECOME GAMES.", 1.2);
+  const handleBootComplete = () => {
+    setIsBootActive(false);
+    setTimeout(() => {
+      ScrollTrigger.refresh();
+    }, 100);
+  };
+
+  // Replay boot sequence cleanly without full page refresh
+  const handleReboot = () => {
+    snd.coin();
+    setIsBootActive(true);
+    setBootKey((k) => k + 1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "instant" });
     }
-  }, []);
+  };
 
   // ── USER GAMEPLAY ACTIONS ────────────────────────────────────────────────
   const handleRoomCreatedOrJoined = (room: any) => {
@@ -278,6 +304,17 @@ export default function VybzMainPage() {
 
     // Scroll to lobby section
     setTimeout(() => scrollTo("section-lobby"), 100);
+  };
+
+  // Leave active room and return cleanly to main landing state
+  const handleLeaveRoom = () => {
+    snd.click();
+    setActiveRoom(null);
+    setTelemetryStatus("● ONLINE");
+    if (typeof window !== "undefined") {
+      window.history.pushState({}, "", window.location.pathname);
+    }
+    scrollTo("section-lobby");
   };
 
   const handleStartMatch = async () => {
@@ -366,6 +403,68 @@ export default function VybzMainPage() {
     activeRoom &&
     (activeRoom.status === "FINISHED" || activeRoom.status === "MATCH_OVER");
 
+  // ── MINIMALISTIC SCROLL-TRIGGERED ENTRANCE ANIMATIONS ────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) return;
+
+    let ctx: gsap.Context | null = null;
+    const timer = setTimeout(() => {
+      ctx = gsap.context(() => {
+        // 1. Single Element Gentle Slide-In (y: 20 -> 0, opacity: 0 -> 1)
+        const fadeUps = document.querySelectorAll(".reveal-fade-up");
+        fadeUps.forEach((el) => {
+          gsap.fromTo(
+            el,
+            { opacity: 0, y: 20 },
+            {
+              opacity: 1,
+              y: 0,
+              duration: 0.6,
+              ease: "power2.out",
+              scrollTrigger: {
+                trigger: el,
+                start: "top 90%",
+                toggleActions: "play none none none",
+              },
+            }
+          );
+        });
+
+        // 2. Staggered Groups (stagger 0.05s)
+        const staggerGroups = document.querySelectorAll(".reveal-stagger-group");
+        staggerGroups.forEach((group) => {
+          const items = group.querySelectorAll(".reveal-stagger-item");
+          if (items.length > 0) {
+            gsap.fromTo(
+              items,
+              { opacity: 0, y: 16 },
+              {
+                opacity: 1,
+                y: 0,
+                duration: 0.5,
+                stagger: 0.05,
+                ease: "power2.out",
+                scrollTrigger: {
+                  trigger: group,
+                  start: "top 88%",
+                  toggleActions: "play none none none",
+                },
+              }
+            );
+          }
+        });
+      });
+    }, 120);
+
+    return () => {
+      clearTimeout(timer);
+      if (ctx) ctx.revert();
+    };
+  }, [isMatchActive, isMatchOver]);
+
   return (
     <div
       style={{
@@ -376,6 +475,14 @@ export default function VybzMainPage() {
         position: "relative",
       }}
     >
+      {/* Cinematic Retro-Futuristic Arcade Boot Screen */}
+      {isBootActive && (
+        <VybzBootScreen
+          key={bootKey}
+          onComplete={handleBootComplete}
+        />
+      )}
+
       <div className="vignette" />
       <CrtOverlay />
       <CustomCursor />
@@ -467,9 +574,8 @@ export default function VybzMainPage() {
             <nav style={{ display: "flex", gap: 6, alignItems: "center" }}>
               {[
                 ["section-document", "01 // CHAT LORE"],
-                ["section-lobby", "02 // MULTIPLAYER LOBBY"],
-                ...(isMatchActive ? [["section-trivia-arena", "03 // TRIVIA ARENA"]] : []),
-                ...(isMatchOver ? [["section-leaderboard", "04 // LEADERBOARD"]] : []),
+                [!isMatchActive ? "section-lobby" : "section-trivia-arena", !isMatchActive ? "02 // MULTIPLAYER LOBBY" : "02 // TRIVIA ARENA"],
+                ...(isMatchOver ? [["section-leaderboard", "03 // LEADERBOARD"]] : []),
               ].map(([id, label]) => (
                 <button
                   key={id}
@@ -546,10 +652,14 @@ export default function VybzMainPage() {
           justifyContent: "center",
           borderBottom: "1px solid var(--border)",
           position: "relative",
+          overflow: "hidden",
           background: "radial-gradient(ellipse at 50% 30%, rgba(57,255,20,0.04) 0%, transparent 70%)",
         }}
       >
-        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px", width: "100%" }}>
+        {/* Immersive Mouse-Interactive Arcade Background */}
+        <HeroInteractiveBackground />
+
+        <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px", width: "100%", position: "relative", zIndex: 10 }}>
           <div style={{ maxWidth: 980 }}>
             <div
               className="jb"
@@ -567,21 +677,17 @@ export default function VybzMainPage() {
               RETRO ARCADE MACHINE // TOURNAMENT EDITION
             </div>
 
-            <h1
-              ref={heroTaglineRef}
-              className="sg"
+            <RetroGlitchHeadline
+              text="YOUR CHATS BECOME GAMES."
+              triggerEntrance={!isBootActive}
               style={{
                 fontSize: "clamp(48px, 8vw, 108px)",
                 fontWeight: 800,
                 letterSpacing: "-0.05em",
                 lineHeight: 0.9,
                 color: "var(--txt)",
-                margin: "0 0 24px",
-                textTransform: "uppercase",
               }}
-            >
-              YOUR CHATS BECOME GAMES.
-            </h1>
+            />
 
             <p
               ref={heroSubRef}
@@ -641,22 +747,23 @@ export default function VybzMainPage() {
       />
 
       {/* ═══════════════════════════════════════════════════════════════════
-          02 // MULTIPLAYER HOSTING & GAME CONFIGURATION LOBBY
+          02 // MULTIPLAYER HOSTING & GAME CONFIGURATION LOBBY / TRIVIA ARENA
       ═══════════════════════════════════════════════════════════════════ */}
-      <MatchConfigLobby
-        chatLore={selectedChat}
-        activeRoom={activeRoom}
-        playerId={playerId}
-        playerName={playerName}
-        onPlayerNameChange={handlePlayerNameChange}
-        onRoomCreatedOrJoined={handleRoomCreatedOrJoined}
-        onStartMatch={handleStartMatch}
-        playClickSound={() => snd.click()}
-      />
+      {!isMatchActive && !isMatchOver && (
+        <MatchConfigLobby
+          chatLore={selectedChat}
+          activeRoom={activeRoom}
+          playerId={playerId}
+          playerName={playerName}
+          onPlayerNameChange={handlePlayerNameChange}
+          onRoomCreatedOrJoined={handleRoomCreatedOrJoined}
+          onStartMatch={handleStartMatch}
+          onLeaveRoom={handleLeaveRoom}
+          playClickSound={() => snd.click()}
+        />
+      )}
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          03 // PRIMARY HIGHLIGHT: STANDOUT TRIVIA ARENA (CENTERPIECE)
-      ═══════════════════════════════════════════════════════════════════ */}
+      {/* Primary Highlight: Trivia Arena replaces Lobby in place when match is active */}
       {isMatchActive && (
         <TriviaArena
           roomState={activeRoom}
@@ -686,39 +793,13 @@ export default function VybzMainPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════
-          FOOTER // RETRO MACHINE TELEMETRY
+          FOOTER // ARCADE SYSTEM SHUTDOWN & ARCHIVE TERMINAL
       ═══════════════════════════════════════════════════════════════════ */}
-      <footer
-        style={{
-          borderTop: "1px solid var(--border)",
-          background: "var(--chassis)",
-          padding: "36px 0",
-          fontFamily: "var(--jb)",
-          fontSize: 10,
-          color: "var(--muted)",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 1440,
-            margin: "0 auto",
-            padding: "0 24px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 16,
-          }}
-        >
-          <div>
-            <span style={{ color: "var(--green)", fontWeight: 700 }}>VYBZ // SYSTEM 01.04</span> — REAL-TIME MULTIPLAYER RETRO TRIVIA
-          </div>
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <span>ALL DEVICES SYNCHRONIZED</span>
-            <Barcode val="VYBZ-SYSTEM-OK" h={14} color="var(--muted)" />
-          </div>
-        </div>
-      </footer>
+      <ArcadeFooter
+        onReboot={handleReboot}
+        playClickSound={() => snd.click()}
+        playCoinSound={() => snd.coin()}
+      />
     </div>
   );
 }

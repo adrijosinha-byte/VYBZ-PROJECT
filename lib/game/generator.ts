@@ -28,7 +28,7 @@ export interface GenerateGameResult {
 export async function generateGameQuestions(
   params: GenerateGameParams
 ): Promise<GenerateGameResult> {
-  const count = Math.min(10, Math.max(1, Number(params.questionCount) || 5));
+  const count = Math.min(30, Math.max(1, Number(params.questionCount) || 5));
   const rom = params.rom || "ROM_001";
 
   // 1. Fetch Session & Messages from DB or memoryDb

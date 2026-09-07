@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import { CHAT_PRESETS, ChatPreset } from "@/lib/mock-data/chat-presets";
 import { apiClient } from "@/lib/api-client";
 import { Barcode } from "@/components/ui/Barcode";
+import { ArcadeChatUploader } from "@/components/ui/ArcadeChatUploader";
 import { TopQuote } from "@/types/api";
 
 interface DocumentSelectorProps {
@@ -113,6 +114,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px" }}>
         {/* Section Header */}
         <div
+          className="reveal-fade-up"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -172,7 +174,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
           }}
         >
           {/* Left Column: Preset Lore Cartridges & Upload Button */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div className="reveal-stagger-group" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div
               className="jb"
               style={{
@@ -191,6 +193,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
                 <button
                   key={preset.id}
                   onClick={() => handleSelectPreset(preset)}
+                  className="reveal-stagger-item"
                   style={{
                     display: "block",
                     width: "100%",
@@ -260,6 +263,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
 
             {/* Custom Chat File Drop / Upload Box */}
             <div
+              className="reveal-fade-up"
               style={{
                 marginTop: 4,
                 border: `1px dashed ${isCustomMode ? "var(--green)" : "var(--border)"}`,
@@ -305,48 +309,21 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
               >
                 Upload any WhatsApp, Discord, or Telegram chat export (.txt or .json). All names and quotes are extracted automatically.
               </p>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  accept=".txt,.json,.csv"
-                  style={{ display: "none" }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  className="btn-ghost"
-                  style={{
-                    fontSize: 10,
-                    padding: "8px 16px",
-                    letterSpacing: "0.08em",
-                    cursor: "pointer",
-                  }}
-                >
-                  {isUploading ? "INGESTING..." : "CHOOSE CHAT FILE →"}
-                </button>
-                {customFileName && (
-                  <span
-                    className="jb"
-                    style={{
-                      fontSize: 10,
-                      color: "var(--green)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {customFileName}
-                  </span>
-                )}
-              </div>
+              <ArcadeChatUploader
+                onChatLoaded={(chat) => {
+                  setCustomChatData(chat);
+                  setIsCustomMode(true);
+                  setCustomFileName(chat.title);
+                  onSelectChat(chat);
+                }}
+                playClickSound={playClickSound}
+              />
             </div>
           </div>
 
           {/* Right Column: Lore Inspector & Verification Card */}
           <div
+            className="reveal-fade-up"
             style={{
               background: "var(--void)",
               border: "1px solid var(--border)",

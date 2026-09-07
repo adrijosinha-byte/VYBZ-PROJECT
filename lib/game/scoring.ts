@@ -27,7 +27,7 @@ export function calculateAnswerPoints(params: {
   }
 
   const basePoints = 500;
-  const timeLimitMs = Math.max(5000, params.timeLimitSeconds * 1000);
+  const timeLimitMs = Math.max(1000, params.timeLimitSeconds * 1000);
   const remainingMs = Math.max(0, timeLimitMs - params.responseTimeMs);
   const speedRatio = Math.min(1, Math.max(0, remainingMs / timeLimitMs));
   const speedBonus = Math.round(500 * speedRatio);

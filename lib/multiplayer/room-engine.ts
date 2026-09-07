@@ -26,14 +26,50 @@ export interface JoinRoomResult {
   status: RoomStatus;
 }
 
+// Persistent cache for custom room configurations (rounds, time limit, mode)
+const roomSettingsCache = new Map<
+  string,
+  {
+    roundCount: number;
+    timeLimitSeconds: number;
+    mode: string;
+  }
+>();
+
+export function getRoomSettings(roomId: string, roomCode?: string) {
+  const memRoom = memoryDb.gameRooms.get(roomId);
+  return (
+    roomSettingsCache.get(roomId) ||
+    (roomCode ? roomSettingsCache.get(roomCode) : undefined) ||
+    memRoom?.settings || {
+      roundCount: 5,
+      timeLimitSeconds: 15,
+      mode: "ROM // 001: WHO SAID IT?",
+    }
+  );
+}
+
 // 1. CREATE ROOM
 export async function createGameRoom(params: {
   gameId: string;
   hostUserId: string;
   displayName: string;
+  settings?: {
+    roundCount?: number;
+    timeLimitSeconds?: number;
+    mode?: string;
+  };
 }): Promise<CreateRoomResult> {
   const roomCode = generateRoomCode();
   const roomId = `room_${Math.random().toString(36).substring(2, 11)}`;
+  const cleanSettings = {
+    roundCount: Math.max(1, Math.min(30, params.settings?.roundCount || 5)),
+    timeLimitSeconds: Math.max(1, Math.min(120, params.settings?.timeLimitSeconds || 15)),
+    mode: params.settings?.mode || "ROM // 001: WHO SAID IT?",
+  };
+
+  roomSettingsCache.set(roomId, cleanSettings);
+  roomSettingsCache.set(roomCode, cleanSettings);
 
   if (isDatabaseConfigured) {
     try {
@@ -64,6 +100,9 @@ export async function createGameRoom(params: {
         },
       });
 
+      roomSettingsCache.set(room.id, cleanSettings);
+      roomSettingsCache.set(room.roomCode, cleanSettings);
+
       return {
         roomId: room.id,
         roomCode: room.roomCode,
@@ -85,6 +124,7 @@ export async function createGameRoom(params: {
     questionStartedAt: null,
     questionDeadline: null,
     createdAt: new Date().toISOString(),
+    settings: cleanSettings,
     players: new Map<string, any>([
       [
         params.hostUserId,
@@ -273,7 +313,8 @@ export async function startRoomMatch(
   hostUserId: string
 ): Promise<void> {
   const roomId = await resolveRoomId(roomIdOrCode);
-  const timeLimitSec = 15;
+  const settings = getRoomSettings(roomId, roomIdOrCode);
+  const timeLimitSec = settings.timeLimitSeconds || 15;
   const now = new Date();
   const deadline = new Date(now.getTime() + timeLimitSec * 1000);
 
@@ -326,7 +367,19 @@ export async function submitRoomAnswer(params: {
   const roomId = await resolveRoomId(params.roomId);
   // Check active room and question
   const pollState = await getRoomPollState(roomId, params.userId);
-  if (pollState.status !== "QUESTION") {
+
+  const now = Date.now();
+  const deadlineMs = pollState.questionDeadline
+    ? new Date(pollState.questionDeadline).getTime()
+    : null;
+
+  // Allow a 6-second network/timeout grace period for auto-lock answers submitted when time expires
+  const isTimeoutGracePeriod =
+    pollState.status === "RESULTS" &&
+    deadlineMs !== null &&
+    now - deadlineMs <= 6000;
+
+  if (pollState.status !== "QUESTION" && !isTimeoutGracePeriod) {
     throw new Error("QUESTION_INACTIVE // Answers cannot be submitted in this state.");
   }
 
@@ -366,11 +419,14 @@ export async function submitRoomAnswer(params: {
   const currentQ = questions[pollState.currentQuestionIndex];
   if (!currentQ) throw new Error("QUESTION_NOT_FOUND");
 
+  const settings = getRoomSettings(roomId);
+  const timeLimitSec = settings.timeLimitSeconds || 15;
+
   const isCorrect = params.selectedAnswer === currentQ.correctAnswer;
   const scoreResult = calculateAnswerPoints({
     isCorrect,
     responseTimeMs: params.responseTimeMs,
-    timeLimitSeconds: 15,
+    timeLimitSeconds: timeLimitSec,
   });
 
   if (isDatabaseConfigured) {
@@ -387,16 +443,59 @@ export async function submitRoomAnswer(params: {
       });
 
       if (existing) {
-        const player = await db.roomPlayer.findUnique({
-          where: { roomId_userId: { roomId, userId: params.userId } },
-        });
-        return {
-          correct: existing.isCorrect,
-          correctAnswer: currentQ.correctAnswer,
-          points: existing.points,
-          totalScore: player?.score || 0,
-          explanation: currentQ.explanation,
-        };
+        if (existing.selectedAnswer !== params.selectedAnswer) {
+          const scoreDiff = scoreResult.totalPoints - existing.points;
+          await db.roomAnswer.update({
+            where: { id: existing.id },
+            data: {
+              selectedAnswer: params.selectedAnswer,
+              isCorrect,
+              responseTimeMs: params.responseTimeMs,
+              points: scoreResult.totalPoints,
+            },
+          });
+          const updatedPlayer = await db.roomPlayer.update({
+            where: { roomId_userId: { roomId, userId: params.userId } },
+            data: { score: { increment: scoreDiff } },
+          });
+
+          // Check if all players have answered this question
+          const allPlayers = await db.roomPlayer.findMany({ where: { roomId } });
+          const allAnswers = await db.roomAnswer.findMany({ where: { roomId, questionId: params.questionId } });
+          const allAnswered = allPlayers.length > 0 && allPlayers.every((p) => allAnswers.some((a) => a.userId === p.userId));
+          if (allAnswered) {
+            const currentRoom = await db.gameRoom.findUnique({ where: { id: roomId } });
+            if (currentRoom?.questionDeadline) {
+              const now = Date.now();
+              const curDeadline = new Date(currentRoom.questionDeadline).getTime();
+              if (curDeadline - now > 2000) {
+                await db.gameRoom.update({
+                  where: { id: roomId },
+                  data: { questionDeadline: new Date(now + 2000) },
+                });
+              }
+            }
+          }
+
+          return {
+            correct: isCorrect,
+            correctAnswer: currentQ.correctAnswer,
+            points: scoreResult.totalPoints,
+            totalScore: updatedPlayer.score,
+            explanation: currentQ.explanation,
+          };
+        } else {
+          const player = await db.roomPlayer.findUnique({
+            where: { roomId_userId: { roomId, userId: params.userId } },
+          });
+          return {
+            correct: existing.isCorrect,
+            correctAnswer: currentQ.correctAnswer,
+            points: existing.points,
+            totalScore: player?.score || 0,
+            explanation: currentQ.explanation,
+          };
+        }
       }
 
       await db.roomAnswer.create({
@@ -416,6 +515,24 @@ export async function submitRoomAnswer(params: {
         data: { score: { increment: scoreResult.totalPoints } },
       });
 
+      // Check if all players have answered this question
+      const allPlayers = await db.roomPlayer.findMany({ where: { roomId } });
+      const allAnswers = await db.roomAnswer.findMany({ where: { roomId, questionId: params.questionId } });
+      const allAnswered = allPlayers.length > 0 && allPlayers.every((p) => allAnswers.some((a) => a.userId === p.userId));
+      if (allAnswered) {
+        const currentRoom = await db.gameRoom.findUnique({ where: { id: roomId } });
+        if (currentRoom?.questionDeadline) {
+          const now = Date.now();
+          const curDeadline = new Date(currentRoom.questionDeadline).getTime();
+          if (curDeadline - now > 2000) {
+            await db.gameRoom.update({
+              where: { id: roomId },
+              data: { questionDeadline: new Date(now + 2000) },
+            });
+          }
+        }
+      }
+
       return {
         correct: isCorrect,
         correctAnswer: currentQ.correctAnswer,
@@ -434,7 +551,20 @@ export async function submitRoomAnswer(params: {
   if (!player) throw new Error("PLAYER_NOT_IN_ROOM");
 
   const ansKey = `${roomId}_${params.questionId}_${params.userId}`;
-  if (!memRoom.answers.has(ansKey)) {
+  const existingMem = memRoom.answers.get(ansKey);
+  if (existingMem) {
+    if (existingMem.selectedAnswer !== params.selectedAnswer) {
+      player.score -= existingMem.points;
+      existingMem.selectedAnswer = params.selectedAnswer;
+      existingMem.isCorrect = isCorrect;
+      existingMem.responseTimeMs = params.responseTimeMs;
+      existingMem.points = scoreResult.totalPoints;
+      player.score += scoreResult.totalPoints;
+      if (player.answers.length > 0) {
+        player.answers[player.answers.length - 1] = { isCorrect, responseTimeMs: params.responseTimeMs };
+      }
+    }
+  } else {
     memRoom.answers.set(ansKey, {
       questionId: params.questionId,
       userId: params.userId,
@@ -445,6 +575,22 @@ export async function submitRoomAnswer(params: {
     });
     player.score += scoreResult.totalPoints;
     player.answers.push({ isCorrect, responseTimeMs: params.responseTimeMs });
+  }
+
+  // Check if ALL players in this room have answered this question
+  const allMemPlayers = Array.from(memRoom.players.values());
+  const allAnswered =
+    allMemPlayers.length > 0 &&
+    allMemPlayers.every((p: any) =>
+      memRoom.answers.has(`${roomId}_${params.questionId}_${p.userId}`)
+    );
+
+  if (allAnswered && memRoom.questionDeadline) {
+    const now = Date.now();
+    const currentDeadlineMs = new Date(memRoom.questionDeadline).getTime();
+    if (currentDeadlineMs - now > 2000) {
+      memRoom.questionDeadline = new Date(now + 2000).toISOString();
+    }
   }
 
   return {
@@ -464,7 +610,8 @@ export async function advanceRoomQuestion(
   const roomId = await resolveRoomId(roomIdOrCode);
   const poll = await getRoomPollState(roomId);
   const nextIdx = poll.currentQuestionIndex + 1;
-  const timeLimitSec = 15;
+  const settings = getRoomSettings(roomId, roomIdOrCode);
+  const timeLimitSec = settings.timeLimitSeconds || 15;
   const now = new Date();
   const deadline = new Date(now.getTime() + timeLimitSec * 1000);
 
@@ -574,9 +721,40 @@ export async function getRoomPollState(
 
   const now = Date.now();
   let status = roomRecord.status as RoomStatus;
-  const deadlineMs = roomRecord.questionDeadline
+  let deadlineMs = roomRecord.questionDeadline
     ? new Date(roomRecord.questionDeadline).getTime()
     : null;
+
+  const currentQIndex = roomRecord.currentQuestion || 0;
+  const rawQ = gameQuestions[currentQIndex] || null;
+  const currentQId = rawQ?.id;
+
+  // Check if all players in the room have locked in their answers
+  const allPlayersAnswered =
+    status === "QUESTION" &&
+    currentQId &&
+    playersList.length > 0 &&
+    playersList.every((p: any) =>
+      answersList.some((a: any) => a.userId === p.userId && a.questionId === currentQId)
+    );
+
+  // If all players have locked in, make the answer appear after 2 seconds regardless of time left
+  if (allPlayersAnswered && deadlineMs && deadlineMs - now > 2000) {
+    const acceleratedDeadline = new Date(now + 2000);
+    deadlineMs = acceleratedDeadline.getTime();
+    roomRecord.questionDeadline = acceleratedDeadline.toISOString();
+    if (isDatabaseConfigured) {
+      db.gameRoom
+        .update({
+          where: { id: roomId },
+          data: { questionDeadline: acceleratedDeadline },
+        })
+        .catch(() => {});
+    }
+    if (memoryDb.gameRooms.has(roomId)) {
+      memoryDb.gameRooms.get(roomId).questionDeadline = acceleratedDeadline.toISOString();
+    }
+  }
 
   // State Transition Check: If QUESTION and deadline passed, move to RESULTS
   if (status === "QUESTION" && deadlineMs && now >= deadlineMs) {
@@ -590,8 +768,6 @@ export async function getRoomPollState(
   }
 
   const remainingSeconds = deadlineMs ? Math.max(0, Math.ceil((deadlineMs - now) / 1000)) : 0;
-  const currentQIndex = roomRecord.currentQuestion || 0;
-  const rawQ = gameQuestions[currentQIndex] || null;
 
   // Mask answer while question is actively in play
   let currentQuestion: any = null;
@@ -605,7 +781,6 @@ export async function getRoomPollState(
   }
 
   // Compile Player List with answered status
-  const currentQId = rawQ?.id;
   const players: MultiplayerPlayer[] = playersList.map((p: any) => {
     const userAns = answersList.find(
       (a: any) => a.userId === p.userId && a.questionId === currentQId
@@ -687,9 +862,9 @@ export async function getRoomPollState(
     hostId: roomRecord.hostUserId,
     activeQuestion: currentQuestion,
     settings: {
-      roundCount: gameQuestions.length || 5,
-      timeLimitSeconds: 15,
-      mode: currentQuestion?.category || "ROM // 001: WHO SAID IT?",
+      roundCount: getRoomSettings(roomId, roomRecord.roomCode).roundCount || gameQuestions.length || 5,
+      timeLimitSeconds: getRoomSettings(roomId, roomRecord.roomCode).timeLimitSeconds || 15,
+      mode: getRoomSettings(roomId, roomRecord.roomCode).mode || currentQuestion?.category || "ROM // 001: WHO SAID IT?",
     },
   } as any;
 }

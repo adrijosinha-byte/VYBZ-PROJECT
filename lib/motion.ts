@@ -19,6 +19,14 @@ export function scrambleText(
   const len = targetText.length;
   const obj = { progress: 0 };
 
+  // Fail-safe timer guarantees the text resolves even if GSAP is interrupted/cancelled
+  const timer = setTimeout(() => {
+    if (element) {
+      element.innerText = targetText;
+      onComplete?.();
+    }
+  }, duration * 1000 + 80);
+
   return gsap.to(obj, {
     progress: 1,
     duration,
@@ -38,6 +46,7 @@ export function scrambleText(
       element.innerText = output;
     },
     onComplete: () => {
+      clearTimeout(timer);
       element.innerText = targetText;
       onComplete?.();
     },

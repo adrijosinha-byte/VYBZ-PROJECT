@@ -25,21 +25,37 @@
   --jb: JetBrains Mono, Courier New, monospace;
 }
 
-/* ── RESET ─────────────────────────────────────────────────────────────────── */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;border-radius:0!important}
-html{font-size:16px;scroll-behavior:auto;-webkit-font-smoothing:antialiased}
-body{
-  background:var(--void);
-  color:var(--txt);
-  font-family:var(--sg);
-  overflow-x:hidden;
-  cursor:none;
+/* ── RESET & GLOBAL CURSOR SUPPRESSION ─────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0 !important;
+  cursor: none !important;
 }
-button, a, input, select, textarea {
-  cursor: pointer;
+
+html, body {
+  font-size: 16px;
+  scroll-behavior: auto;
+  -webkit-font-smoothing: antialiased;
+  cursor: none !important;
 }
-@media(pointer:coarse){
-  body, button, a, input, select, textarea { cursor: auto !important; }
+
+body {
+  background: var(--void);
+  color: var(--txt);
+  font-family: var(--sg);
+  overflow-x: hidden;
+}
+
+button, a, input, select, textarea, label, [role="button"] {
+  cursor: none !important;
+}
+
+@media (pointer: coarse) {
+  *, *::before, *::after, html, body, button, a, input, select, textarea, label, [role="button"] {
+    cursor: auto !important;
+  }
 }
 
 /* ── DOT MATRIX CANVAS ─────────────────────────────────────────────────────── */
@@ -387,3 +403,33 @@ body::after{
   color:var(--green);font-family:var(--jb);font-size:12px;padding:10px 14px;width:100%;outline:none;
 }
 .term-input:focus{border-color:var(--green)}
+
+/* Suppress native spinners for custom retro steppers */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+input[type="number"] {
+  -moz-appearance: textfield !important;
+}
+
+/* ── SCROLL REVEAL UTILITIES ───────────────────────────────────────────────── */
+.reveal-fade-up {
+  will-change: transform, opacity;
+}
+.reveal-stagger-item {
+  will-change: transform, opacity;
+}
+.reveal-line-expand {
+  transform-origin: left center;
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-fade-up,
+  .reveal-stagger-item,
+  .reveal-line-expand {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

@@ -4,7 +4,7 @@ import { createGameRoom } from "@/lib/multiplayer/room-engine";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { gameId, hostUserId, displayName } = body;
+    const { gameId, hostUserId, displayName, settings } = body;
 
     if (!gameId || !hostUserId || !displayName) {
       return NextResponse.json(
@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
       gameId,
       hostUserId,
       displayName,
+      settings,
     });
 
     return NextResponse.json(result);

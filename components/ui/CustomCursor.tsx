@@ -47,8 +47,14 @@ export const CustomCursor: React.FC = () => {
         target.tagName === "BUTTON" ||
         target.tagName === "A" ||
         target.tagName === "INPUT" ||
+        target.tagName === "SELECT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "LABEL" ||
         target.closest("button") ||
-        target.closest("a")
+        target.closest("a") ||
+        target.closest("[role='button']") ||
+        target.closest(".cartridge") ||
+        target.closest(".ans-btn")
       ) {
         setLabel("TARGET");
         setIsHovered(true);
