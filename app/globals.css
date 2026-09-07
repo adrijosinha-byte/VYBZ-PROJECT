@@ -35,7 +35,12 @@ body{
   overflow-x:hidden;
   cursor:none;
 }
-@media(pointer:coarse){body{cursor:auto}}
+button, a, input, select, textarea {
+  cursor: pointer;
+}
+@media(pointer:coarse){
+  body, button, a, input, select, textarea { cursor: auto !important; }
+}
 
 /* ── DOT MATRIX CANVAS ─────────────────────────────────────────────────────── */
 body::before{

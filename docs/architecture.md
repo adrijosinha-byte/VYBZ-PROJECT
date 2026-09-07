@@ -1,208 +1,141 @@
-# VYBZ // ARCADE SYSTEM Architecture Documentation
+# VYBZ // PRODUCTION BACKEND ARCHITECTURE
 
 ## 1. System Overview
 
-The VYBZ Arcade System transforms raw group chat conversations into interactive, retro-cyberpunk arcade trivia cartridges. The system is designed with strict decoupling between the frontend user experience, the API boundary, and the AI service layer.
+VYBZ is a retro-cyberpunk multiplayer trivia arcade machine that ingests real group chat exports (e.g. WhatsApp .txt or JSON) and generates source-grounded trivia tournaments played simultaneously across multiple devices.
 
 ```
-                    ┌────────────────────────┐
-                    │      VYBZ FRONTEND     │
-                    │   Next.js App Router   │
-                    │      (app/page.tsx)    │
-                    └───────────┬────────────┘
-                                │
-                          HTTP / JSON
-                          API Boundary
-                                │
-                                ▼
-                    ┌────────────────────────┐
-                    │    API ROUTE LAYER     │
-                    │      (app/api/**)      │
-                    └───────────┬────────────┘
-                                │
-                                ▼
-                    ┌────────────────────────┐
-                    │     SERVICE FACTORY    │
-                    │  (lib/services/index.ts)│
-                    └───────────┬────────────┘
-                                │
-                 ┌──────────────┴──────────────┐
-                 │ (MOCK_AI=true)              │ (MOCK_AI=false)
-                 ▼                             ▼
-        ┌──────────────────┐          ┌──────────────────┐
-        │  MOCK AI SERVICE │          │  GEMINI SERVICE  │
-        │(lib/services/    │          │(lib/services/    │
-        │    mock-ai.ts)   │          │   ai-trivia.ts)  │
-        └────────┬─────────┘          └────────┬─────────┘
-                 │                             │
-                 ▼                             ▼
-        ┌──────────────────┐          ┌──────────────────┐
-        │   MOCK DATASET   │          │  GEMINI 2.5 API  │
-        │ (vybz-demo.ts)   │          │  @google/genai   │
-        └──────────────────┘          └──────────────────┘
-                 │                             │
-                 └──────────────┬──────────────┘
-                                │
-                                ▼
-                    ┌────────────────────────┐
-                    │    PERSISTENCE LAYER   │
-                    │   Prisma / Supabase    │
-                    │  (In-memory fallback)  │
-                    └────────────────────────┘
+                    ┌────────────────────────────────────────────────────────┐
+                    │                      VYBZ FRONTEND                     │
+                    │      Next.js 16 App Router (app/page.tsx, GSAP, WebAudio)│
+                    │   CRT Scanlines • Phosphor HUD • Retro Sound Synth     │
+                    └───────────────────────────┬────────────────────────────┘
+                                                │
+                                        HTTP JSON REST
+                                    (lib/api-client.ts)
+                                                │
+                                                ▼
+                    ┌────────────────────────────────────────────────────────┐
+                    │               NEXT.JS ROUTE HANDLERS (/api/*)          │
+                    │  • /api/chat/ingest        • /api/game/generate        │
+                    │  • /api/game/answer        • /api/game/complete        │
+                    │  • /api/game/master        • /api/profile              │
+                    │  • /api/rooms (create)     • /api/rooms/join           │
+                    │  • /api/rooms/[roomId]     • /api/rooms/[roomId]/start │
+                    │  • /api/rooms/[roomId]/answer                          │
+                    │  • /api/rooms/[roomId]/next                            │
+                    │  • /api/rooms/[roomId]/finish                          │
+                    └───────────────────────────┬────────────────────────────┘
+                                                │
+                     ┌──────────────────────────┴──────────────────────────┐
+                     │                                                     │
+                     ▼                                                     ▼
+┌────────────────────────────────────────┐   ┌────────────────────────────────────────┐
+│             CORE ENGINES               │   │            INTELLIGENCE LAYER          │
+│ • lib/chat/parser.ts (WhatsApp/JSON)   │   │ • lib/openai.ts (OpenAI gpt-4o client) │
+│ • lib/chat/analyzer.ts (Facts vs Infs) │   │ • lib/game/generator.ts (5 ROM gen)    │
+│ • lib/game/scoring.ts (Server-auth)    │   │ • lib/game/validator.ts (Invariants)   │
+│ • lib/game/adaptation.ts (Difficulty)  │   │ • lib/game/master.ts (Game Master)     │
+│ • lib/multiplayer/room-engine.ts       │   │                                        │
+│ • lib/profile/service.ts (Memory)      │   │                                        │
+└────────────────────┬───────────────────┘   └────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                             PERSISTENCE & DATA LAYER                                │
+│                     PostgreSQL via Prisma ORM (prisma/schema.prisma)                 │
+│              Resilient In-Memory Database Fallback for Zero-Config Dev (lib/db.ts)    │
+│                                                                                     │
+│ Models: User, ChatSession, ChatParticipant, ChatMessage, PlayerProfile,              │
+│         Game, GameQuestion, GameAnswer, GameRoom, RoomPlayer, RoomAnswer, GameEvent │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 2. API Contract Specifications
+## 2. Component Directory Architecture
 
-### 2.1. Chat Ingestion (`POST /api/chat/ingest`)
-- **Purpose**: Parses uploaded raw chat exports (.txt, .json, .csv) and extracts participants, message volume, memorable quotes, and inferred conversation themes.
-- **Request Body**:
-  ```json
-  {
-    "rawText": "string (max 10MB)",
-    "fileName": "optional string",
-    "sourceType": "optional 'whatsapp' | 'discord' | 'telegram' | 'generic'"
-  }
-  ```
-- **Response Body (`ChatIngestResponse`)**:
-  ```json
-  {
-    "participants": ["Nishant", "Kabir", "Arjun", "Riya", "Sneha", "Dev"],
-    "messageCount": 142,
-    "topQuotes": [
-      {
-        "id": "msg_0001",
-        "author": "Nishant",
-        "text": "guys are we actually doing the hackathon tonight",
-        "timestamp": "06/09/26, 18:05"
-      }
-    ],
-    "inferredInterests": ["hackathon", "arcade", "pizza", "music"],
-    "suggestedRom": "ROM // 001: WHO SAID IT?",
-    "sampleSnippets": ["Nishant: guys are we actually doing the hackathon tonight"]
-  }
-  ```
-- **Error States**:
-  - `400 EMPTY_PAYLOAD`: Missing or empty `rawText`.
-  - `413 PAYLOAD_OVERSIZE`: File exceeds 10MB maximum limit.
-  - `500 INGESTION_FAILED`: Parse failure.
-
----
-
-### 2.2. Question Generation (`POST /api/questions/generate`)
-- **Purpose**: Compiles 5 structured arcade trivia questions matching the selected ROM cartridge mode.
-- **Request Body (`GenerateQuestionsRequest`)**:
-  ```json
-  {
-    "gameId": "optional string",
-    "participants": ["string"],
-    "interests": ["string"],
-    "topQuotes": [{"id": "string", "author": "string", "text": "string"}],
-    "romCategory": "ROM // 001" | "ROM // 002" | "ROM // 003" | "ROM // 004" | "ROM // 005",
-    "difficulty": "easy" | "medium" | "hard",
-    "count": 5
-  }
-  ```
-- **Response Body (`GenerateQuestionsResponse`)**:
-  ```json
-  {
-    "questions": [
-      {
-        "id": "mock_q_001_1",
-        "round": "ROUND 01 / 05",
-        "category": "ROM // 001",
-        "prompt": "WHO SAID THIS IN THE GROUP CHAT?",
-        "quote": "\"guys are we actually doing the hackathon tonight\"",
-        "options": [
-          { "key": "A", "label": "Kabir", "tag": "CHAOS OPERATOR // SHITPOSTER" },
-          { "key": "B", "label": "Nishant", "tag": "LORE ARCHIVIST // CHAT HISTORIAN" },
-          { "key": "C", "label": "Arjun", "tag": "3AM VOICE NOTE PHILOSOPHER" },
-          { "key": "D", "label": "Riya", "tag": "VOICE OF REASON // MEDIATOR" }
-        ],
-        "correctAnswer": "B",
-        "explanation": "Nishant sent this message in the imported chat at 18:05.",
-        "difficulty": "medium",
-        "sourceMessageId": "msg_0001",
-        "sourceAuthor": "Nishant",
-        "sourceType": "WHO_SAID_IT"
-      }
-    ],
-    "isDemoFallback": true
-  }
-  ```
-- **Factual Invariant**:
-  - `correctAnswer` is mathematically guaranteed to equal `options.find(o => o.label === sourceAuthor).key`.
-  - All 4 options are distinct.
-  - Distractors are dynamically distributed across all participants.
-- **Error States**:
-  - `400 INSUFFICIENT_PARTICIPANTS`: When fewer than 4 participants are provided (no fake users are fabricated).
+```
+nishant-chat/
+├── app/
+│   ├── api/
+│   │   ├── chat/ingest/route.ts       # WhatsApp TXT & JSON file ingestion
+│   │   ├── game/
+│   │   │   ├── generate/route.ts      # 5 ROM question generator
+│   │   │   ├── answer/route.ts        # Server-authoritative answer grader
+│   │   │   ├── complete/route.ts      # Tournament summarizer & profile updater
+│   │   │   └── master/route.ts        # VYBZ Game Master recommendation engine
+│   │   ├── rooms/
+│   │   │   ├── route.ts               # Room creation (POST /api/rooms)
+│   │   │   ├── join/route.ts          # Room join with roomCode (POST /api/rooms/join)
+│   │   │   └── [roomId]/
+│   │   │       ├── route.ts           # State poll (GET /api/rooms/[roomId])
+│   │   │       ├── ready/route.ts     # Player ready toggle
+│   │   │       ├── start/route.ts     # Host tournament launch
+│   │   │       ├── answer/route.ts    # Multiplayer answer submission
+│   │   │       ├── next/route.ts      # Advance to next question
+│   │   │       └── finish/route.ts    # Conclude match and lock leaderboard
+│   │   └── profile/route.ts           # Player behavioral memory profile
+│   ├── layout.tsx                     # Root HTML shell & viewport metadata
+│   └── page.tsx                       # Complete Arcade frontend with CRT & WebAudio
+├── components/
+│   ├── sections/
+│   │   ├── DocumentSelector.tsx       # Step 01: Chat Archive Ingestion & Presets
+│   │   ├── MatchConfigLobby.tsx       # Step 02: Multiplayer Lobby & Host Roster
+│   │   ├── TriviaArena.tsx            # Step 03: Standout Trivia Cabinet (Centerpiece)
+│   │   └── LeaderboardPodium.tsx      # Step 04: Post-Match Ranked Podium
+│   └── ui/
+│       ├── Barcode.tsx                # Procedural SVG barcode HUD
+│       ├── CrtOverlay.tsx             # Scanlines and phosphor noise
+│       └── CustomCursor.tsx           # Hardware-accelerated square CRT crosshair
+├── lib/
+│   ├── api-client.ts                  # Typed browser API client with all 15 methods
+│   ├── db.ts                          # Database singleton with resilient fallback
+│   ├── openai.ts                      # OpenAI client with structured JSON enforcement
+│   ├── chat/
+│   │   ├── parser.ts                  # WhatsApp TXT regex + JSON parser
+│   │   └── analyzer.ts                # Dual-pass fact vs inference analyzer
+│   ├── game/
+│   │   ├── generator.ts               # 5 ROM trivia generator with fallback corpus
+│   │   ├── validator.ts               # Grounding invariant checker
+│   │   ├── scoring.ts                 # Speed bonus calculation & leaderboard builder
+│   │   └── adaptation.ts              # Adaptive difficulty & personalized categories
+│   ├── multiplayer/
+│   │   ├── room-code.ts               # Unambiguous VYBZ-XXXX code generator
+│   │   └── room-engine.ts             # Server-authoritative multiplayer state machine
+│   └── profile/
+│       └── service.ts                 # Behavioral memory and profiling service
+├── prisma/
+│   └── schema.prisma                  # 12 relational models for PostgreSQL
+└── types/
+    ├── api.ts                         # Request and response contract interfaces
+    ├── multiplayer.ts                 # Room state machine, player, and poll types
+    └── vybz.ts                        # Core ROM, question, option, and profile types
+```
 
 ---
 
-### 2.3. AI Game Master (`POST /api/game/master`)
-- **Purpose**: Evaluates gameplay state, scores, and round progression to trigger dynamic arcade loop events.
-- **Request Body (`GameMasterRequest`)**:
-  ```json
-  {
-    "round": 5,
-    "players": [{"name": "Nishant", "score": 2500}],
-    "scores": {"Nishant": 2500},
-    "currentQuestion": {}
-  }
-  ```
-- **Response Body (`GameMasterResponse`)**:
-  ```json
-  {
-    "action": "BONUS_ROUND" | "NEXT_QUESTION" | "HINT" | "DIFFICULTY_UP" | "GAME_END",
-    "message": "HIGH SCORE DETECTED // HEURISTIC CORE MULTIPLIER ENGAGED (2X PTS)"
-  }
-  ```
+## 3. Grounding & Anti-Hallucination Invariants
+
+Every question generated in the VYBZ system adheres to strict mathematical invariants verified by `lib/game/validator.ts`:
+
+1. **Option Integrity**: Every question MUST provide exactly 4 options labeled `A`, `B`, `C`, and `D`.
+2. **Key Exclusivity**: Exactly one option's key must match `correctAnswer`.
+3. **Attribution Invariant (ROM 001)**:
+   For `ROM // 001: WHO SAID IT?`:
+   $$\text{options}[\text{correctAnswer}].\text{label} \equiv \text{sourceMessage}.\text{author}$$
+   The correct answer must be the exact verbatim speaker of the quote, grounded in verified `sourceMessageIds`.
+4. **Separation of Facts from Inferences**:
+   In `lib/chat/analyzer.ts`, real chat messages are stored as immutable `facts` (quotes, authors, timestamps). Inferences (inside jokes, relationship dynamics, behavioral traits) are stored separately and clearly marked as inferred context.
 
 ---
 
-### 2.4. Media Safety Moderation (`POST /api/media/moderate`)
-- **Purpose**: Validates user-submitted media for safety and community compliance before persisting.
-- **Request Body (`ModerationRequest`)**:
-  ```json
-  {
-    "id": "med_12345",
-    "mimeType": "image/png",
-    "base64": "...",
-    "userId": "optional string"
-  }
-  ```
-- **Response Body (`ModerationResponse`)**:
-  ```json
-  {
-    "allowed": true,
-    "category": "demo_safe",
-    "confidence": 0.99,
-    "reason": "Demo content passed mock moderation."
-  }
-  ```
+## 4. Server-Authoritative Multiplayer Design
 
----
+To ensure zero dependencies on long-lived WebSocket processes and ensure 100% compatibility with Vercel serverless deployment:
 
-## 3. Cartridge Modes
-
-| Cartridge | Name | Gameplay Focus |
-|---|---|---|
-| **ROM // 001** | **WHO SAID IT?** | Quote-to-author attribution with real messages and 3 distractors. |
-| **ROM // 002** | **MEMORY BANK** | Event and chronological recall grounded in real chat lore. |
-| **ROM // 003** | **FRIENDSHIP QUIZ** | Habits, signature reactions, and friendship quirks. |
-| **ROM // 004** | **HOT TAKE MACHINE** | Heated group debates, hot takes, and strong opinions. |
-| **ROM // 005** | **CHAOS MODE** | Rapid inside jokes, multi-party debates, and chaotic incidents. |
-
----
-
-## 4. Decoupling & Factory Pattern
-
-The API route handlers (`app/api/**`) do not import specific AI clients directly. Instead, they interact through abstract service interfaces defined in [lib/services/index.ts](file:///c:/Users/NISHANT/Documents/VYBZ%20ANTIGRAVITY/nishant-chat/lib/services/index.ts):
-
-- `ChatAnalysisService`
-- `TriviaService`
-- `GameMasterService`
-- `ModerationService`
-
-When `MOCK_AI=true`, the factory provides deterministic, simulated AI implementations backed by [lib/mock-data/vybz-demo.ts](file:///c:/Users/NISHANT/Documents/VYBZ%20ANTIGRAVITY/nishant-chat/lib/mock-data/vybz-demo.ts). When `MOCK_AI=false` and `GEMINI_API_KEY` is present, it returns production implementations backed by `@google/genai` (Gemini 2.5 Flash).
+- **State Storage**: Room state is stored persistently in PostgreSQL (or `memoryDb` during local offline testing).
+- **Client Synchronization**: Clients poll `GET /api/rooms/[roomId]?userId=...` every 1.5 seconds during active play.
+- **Clock Authority**: Question deadlines (`questionDeadline`) are computed and stored on the server. The server automatically transitions questions to `RESULTS` when the deadline expires.
+- **Scoring Authority**: Points are calculated on the server using timestamp deltas:
+  $$\text{Score} = \begin{cases} 500 + \max\left(0, \left\lfloor 500 \times \left(1 - \frac{\Delta t}{T_{\text{limit}}}\right)\right\rfloor\right) & \text{if correct} \\ 0 & \text{if incorrect} \end{cases}$$

@@ -1,27 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGameMasterService } from "@/lib/services";
+import { generateStructuredJson, isOpenAiConfigured } from "@/lib/openai";
+import { GameMasterRequest, GameMasterResponse } from "@/types/api";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const { round = 1, players = [], currentQuestion, scores = {} } = body;
+    const body: GameMasterRequest = await request.json().catch(() => ({}));
+    const { round = 1, players = [], scores = {} } = body;
 
-    const gameMasterService = getGameMasterService();
-    const result = await gameMasterService.executeGameMaster({
-      round: Number(round) || 1,
-      players: Array.isArray(players) ? players : [],
-      currentQuestion,
-      scores: typeof scores === "object" && scores !== null ? scores : {},
+    const topPlayer = players.slice().sort((a, b) => b.score - a.score)[0];
+    const topScore = topPlayer?.score || 0;
+
+    if (isOpenAiConfigured) {
+      try {
+        const systemPrompt = `You are the VYBZ AI Game Master arbiter.
+Evaluate the current game bench state and suggest a dramatic arcade commentary action.
+Permitted actions: NEXT_QUESTION, HINT, BONUS_ROUND, DIFFICULTY_UP, DIFFICULTY_DOWN, GAME_END.
+Never mutate the game directly. Return pure JSON with keys: action, message, difficulty (optional), category (optional).`;
+
+        const userPrompt = `Round: ${round}\nScores: ${JSON.stringify(scores)}\nTop Player: ${topPlayer?.name || "Player"} with ${topScore} pts`;
+
+        const res = await generateStructuredJson<GameMasterResponse>({
+          systemPrompt,
+          userPrompt,
+          temperature: 0.4,
+        });
+
+        return NextResponse.json(res);
+      } catch (err) {
+        console.warn("OpenAI Game Master fallback triggered:", err);
+      }
+    }
+
+    // Deterministic Rule-Based Game Master
+    let action: GameMasterResponse["action"] = "NEXT_QUESTION";
+    let message = "Heuristic weights recalibrated. Proceeding to next round.";
+
+    if (round >= 5) {
+      action = "GAME_END";
+      message = "FINAL ROUND COMPLETED // ALL LORE VECTORS EVALUATED";
+    } else if (topScore >= 2500) {
+      action = "BONUS_ROUND";
+      message = "HEURISTIC MULTIPLIER ACTIVE // ACCURACY THRESHOLD SURPASSED";
+    } else if (topScore < 500 && round > 2) {
+      action = "HINT";
+      message = "TACTICAL HINT // VERIFY AUTHOR QUOTE TIMESTAMP METRICS";
+    }
+
+    return NextResponse.json({
+      action,
+      message,
+      difficulty: "NORMAL",
     });
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("Game Master API error:", error);
+  } catch (error: any) {
+    console.error("Game Master API Error:", error);
     return NextResponse.json(
-      {
-        action: "NEXT_QUESTION",
-        message: "HEURISTIC BUS ERROR // RESUMING STANDARD CARTRIDGE CYCLE",
-      },
+      { error: { code: "MASTER_ERROR", message: error?.message || "Game Master error" } },
       { status: 500 }
     );
   }

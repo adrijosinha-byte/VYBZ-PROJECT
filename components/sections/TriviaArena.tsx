@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect } from "react";
 import { Barcode } from "@/components/ui/Barcode";
 import { ArcadeOptionKey } from "@/types/api";
 
@@ -20,37 +20,35 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
   onSelectOption,
   onAdvanceQuestion,
   playClickSound,
-  playSuccessSound,
-  playErrorSound,
+  playSuccessSound: _playSuccessSound,
+  playErrorSound: _playErrorSound,
 }) => {
-  const activeQ = roomState?.activeQuestion;
-  const isHost = roomState?.hostId === playerId;
-  const isReveal = roomState?.status === "QUESTION_REVEAL";
+  const activeQ = roomState?.activeQuestion || roomState?.currentQuestion;
+  const isHost = roomState?.hostId === playerId || roomState?.hostUserId === playerId;
+  const isReveal = roomState?.status === "QUESTION_REVEAL" || roomState?.status === "RESULTS";
   const remainingSeconds = roomState?.remainingSeconds ?? 0;
   const timeLimit = roomState?.settings?.timeLimitSeconds ?? 15;
   const progressRatio = Math.max(0, Math.min(1, remainingSeconds / timeLimit));
 
   // Find local player state
-  const localPlayer = roomState?.players?.find((p: any) => p.id === playerId);
+  const localPlayer = roomState?.players?.find(
+    (p: any) => p.id === playerId || p.userId === playerId
+  );
   const myAnswer = localPlayer?.lastAnswer;
   const hasAnswered = localPlayer?.hasAnsweredCurrent;
 
   // Keyboard shortcut listener for options (A, B, C, D)
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (hasAnswered || isReveal) return;
       const key = e.key.toUpperCase();
       if (key === "A" || key === "B" || key === "C" || key === "D") {
         onSelectOption(key as ArcadeOptionKey);
       }
-    },
-    [hasAnswered, isReveal, onSelectOption]
-  );
-
-  useEffect(() => {
+    };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  }, [hasAnswered, isReveal, onSelectOption]);
 
   if (!activeQ) {
     return (
@@ -123,7 +121,7 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                   letterSpacing: "0.15em",
                 }}
               >
-                [ ROUND 0{roomState.currentQuestionIndex + 1} / 0{roomState.totalQuestions} ]
+                [ ROUND 0{(roomState.currentQuestionIndex ?? 0) + 1} / 0{roomState.totalQuestions || roomState.settings?.roundCount || 5} ]
               </div>
               <span style={{ color: "var(--border)" }}>|</span>
               <div
@@ -134,14 +132,14 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                   letterSpacing: "0.1em",
                 }}
               >
-                {roomState.settings.mode}
+                {roomState.settings?.mode || "ROM // 001: WHO SAID IT?"}
               </div>
             </div>
 
             {/* Right: Room & Score HUD */}
             <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
               <div className="jb" style={{ fontSize: 10, color: "var(--muted)" }}>
-                ROOM: <span style={{ color: "var(--txt)", fontWeight: 700 }}>{roomState.code}</span>
+                ROOM: <span style={{ color: "var(--txt)", fontWeight: 700 }}>{roomState.roomCode || roomState.code}</span>
               </div>
               <div
                 className="jb"
@@ -498,7 +496,7 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                       padding: "4px 10px",
                     }}
                   >
-                    {p.name}: {p.hasAnsweredCurrent ? "✔ ANSWERED" : "THINKING..."}
+                    {p.displayName || p.name}: {p.hasAnsweredCurrent ? "✔ ANSWERED" : "THINKING..."}
                   </div>
                 ))}
               </div>

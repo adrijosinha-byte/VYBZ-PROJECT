@@ -1,31 +1,13 @@
-// Shared TypeScript Contracts for VYBZ // ARCADE SYSTEM 01.04
+// Central API Contracts for VYBZ // ARCADE SYSTEM
 
-// ── OPTION CONTRACT ────────────────────────────────────────────────────────
-export type ArcadeOptionKey = "A" | "B" | "C" | "D";
+import {
+  ArcadeOptionKey,
+  VybzQuestion,
+  PlayerBehavioralProfile,
+  VybzRom,
+} from "./vybz";
+import { LeaderboardPlayer, RoomStatus } from "./multiplayer";
 
-export interface ArcadeOption {
-  key: ArcadeOptionKey;
-  label: string;
-  tag: string;
-}
-
-// ── QUESTION CONTRACT ──────────────────────────────────────────────────────
-export interface ArcadeQuestion {
-  id: string;
-  round: string;
-  category: string;
-  prompt: string;
-  quote: string;
-  options: [ArcadeOption, ArcadeOption, ArcadeOption, ArcadeOption];
-  correctAnswer: ArcadeOptionKey;
-  explanation: string;
-  difficulty: "easy" | "medium" | "hard" | "extreme";
-  sourceMessageId?: string;
-  sourceAuthor?: string;
-  sourceType?: "WHO_SAID_IT" | "MEMORY_BANK" | "FRIENDSHIP_QUIZ" | "HOT_TAKE" | "CHAOS_MODE";
-}
-
-// ── CHAT INGESTION CONTRACT ────────────────────────────────────────────────
 export interface TopQuote {
   id?: string;
   author: string;
@@ -33,41 +15,61 @@ export interface TopQuote {
   timestamp?: string;
 }
 
-export interface ChatIngestRequest {
-  rawText: string;
-  fileName?: string;
-  sourceType?: "whatsapp" | "discord" | "telegram" | "generic";
-}
-
+// 1. Chat Ingestion
 export interface ChatIngestResponse {
+  sessionId: string;
   participants: string[];
   messageCount: number;
   topQuotes: TopQuote[];
-  inferredInterests: string[];
-  suggestedRom?: string;
   sampleSnippets?: string[];
 }
 
-// ── QUESTION GENERATION CONTRACT ───────────────────────────────────────────
-export interface GenerateQuestionsRequest {
-  gameId?: string;
-  participants: string[];
-  interests: string[];
-  quotes?: (string | TopQuote)[];
-  topQuotes?: TopQuote[];
-  sourceMessages?: TopQuote[];
-  romCategory?: string;
-  difficulty?: string;
-  count?: number;
+// 2. Game Generation
+export interface GenerateGameRequest {
+  sessionId: string;
+  rom: string | VybzRom;
+  questionCount?: number;
+  userId?: string;
 }
 
-export interface GenerateQuestionsResponse {
-  questions: ArcadeQuestion[];
-  isDemoFallback?: boolean;
-  gameId?: string;
+export interface GenerateGameResponse {
+  gameId: string;
+  rom: string;
+  questions: VybzQuestion[];
 }
 
-// ── AI GAME MASTER CONTRACT ────────────────────────────────────────────────
+// 3. Game Answer
+export interface SubmitAnswerRequest {
+  gameId: string;
+  questionId: string;
+  userId?: string;
+  selectedAnswer: ArcadeOptionKey;
+  responseTimeMs?: number;
+}
+
+export interface SubmitAnswerResponse {
+  correct: boolean;
+  correctAnswer: ArcadeOptionKey;
+  points: number;
+  totalScore: number;
+  explanation: string;
+}
+
+// 4. Game Complete
+export interface CompleteGameRequest {
+  gameId: string;
+  userId?: string;
+}
+
+export interface CompleteGameResponse {
+  score: number;
+  accuracy: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  profileUpdate?: Partial<PlayerBehavioralProfile>;
+}
+
+// 5. Game Master
 export type GameMasterAction =
   | "NEXT_QUESTION"
   | "HINT"
@@ -76,16 +78,10 @@ export type GameMasterAction =
   | "DIFFICULTY_DOWN"
   | "GAME_END";
 
-export interface GameMasterPlayer {
-  id?: string;
-  name: string;
-  score: number;
-}
-
 export interface GameMasterRequest {
   round: number;
-  players: GameMasterPlayer[];
-  currentQuestion?: Partial<ArcadeQuestion>;
+  players: { id?: string; name: string; score: number }[];
+  currentQuestion?: Partial<VybzQuestion>;
   scores: Record<string, number>;
 }
 
@@ -96,17 +92,58 @@ export interface GameMasterResponse {
   category?: string;
 }
 
-// ── MEDIA MODERATION CONTRACT ──────────────────────────────────────────────
-export interface ModerationRequest {
-  id: string;
-  mimeType: string;
-  base64: string;
-  userId?: string;
+// 6. Multiplayer Room Contracts
+export interface CreateRoomRequest {
+  gameId: string;
+  hostUserId: string;
+  displayName: string;
 }
 
-export interface ModerationResponse {
-  allowed: boolean;
-  category: string;
-  confidence: number;
-  reason: string;
+export interface CreateRoomResponse {
+  roomId: string;
+  roomCode: string;
+  hostUserId: string;
 }
+
+export interface JoinRoomRequest {
+  roomCode: string;
+  userId: string;
+  displayName: string;
+}
+
+export interface JoinRoomResponse {
+  roomId: string;
+  roomCode: string;
+  players: { userId: string; displayName: string; isHost: boolean }[];
+  status: RoomStatus;
+}
+
+export interface SetReadyRequest {
+  userId: string;
+  ready: boolean;
+}
+
+export interface SubmitRoomAnswerRequest {
+  userId: string;
+  questionId: string;
+  selectedAnswer: ArcadeOptionKey;
+  responseTimeMs: number;
+}
+
+export interface SubmitRoomAnswerResponse {
+  correct: boolean;
+  correctAnswer: ArcadeOptionKey;
+  points: number;
+  totalScore: number;
+  explanation: string;
+}
+
+export interface FinishRoomResponse {
+  finished: boolean;
+  leaderboard: LeaderboardPlayer[];
+}
+
+export type LeaderboardEntry = LeaderboardPlayer;
+
+export * from "./vybz";
+export * from "./multiplayer";

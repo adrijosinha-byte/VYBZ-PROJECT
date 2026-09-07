@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Barcode } from "@/components/ui/Barcode";
-import { LeaderboardEntry } from "@/lib/services/multiplayer-store";
+import { LeaderboardEntry } from "@/types/api";
 
 interface LeaderboardPodiumProps {
   roomState: any;

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
@@ -28,21 +28,27 @@ class SndEngine {
   muted = false;
 
   init() {
-    if (!this.ctx && typeof window !== "undefined") {
-      const A =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext })
-          .webkitAudioContext;
-      if (A) this.ctx = new A();
+    try {
+      if (!this.ctx && typeof window !== "undefined") {
+        const A =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext })
+            .webkitAudioContext;
+        if (A) this.ctx = new A();
+      }
+      if (this.ctx && this.ctx.state === "suspended") {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch {
+      // Insecure context or browser restrictions
     }
-    if (this.ctx?.state === "suspended") this.ctx.resume();
   }
 
   tone(freq: number, dur: number, type: OscillatorType = "square", vol = 0.1) {
     if (this.muted) return;
-    this.init();
-    if (!this.ctx) return;
     try {
+      this.init();
+      if (!this.ctx) return;
       const o = this.ctx.createOscillator();
       const g = this.ctx.createGain();
       o.type = type;
@@ -63,22 +69,34 @@ class SndEngine {
   }
 
   click() {
-    this.tone(1200, 0.04, "square", 0.08);
+    try {
+      this.tone(1200, 0.04, "square", 0.08);
+    } catch {}
   }
 
   coin() {
-    this.tone(987, 0.12, "square", 0.14);
-    setTimeout(() => this.tone(1318, 0.35, "square", 0.18), 100);
+    try {
+      this.tone(987, 0.12, "square", 0.14);
+      setTimeout(() => {
+        try { this.tone(1318, 0.35, "square", 0.18); } catch {}
+      }, 100);
+    } catch {}
   }
 
   success() {
-    [523, 659, 784, 1046].forEach((f, i) =>
-      setTimeout(() => this.tone(f, 0.22, "triangle", 0.14), i * 75)
-    );
+    try {
+      [523, 659, 784, 1046].forEach((f, i) =>
+        setTimeout(() => {
+          try { this.tone(f, 0.22, "triangle", 0.14); } catch {}
+        }, i * 75)
+      );
+    } catch {}
   }
 
   error() {
-    this.tone(140, 0.32, "sawtooth", 0.18);
+    try {
+      this.tone(140, 0.32, "sawtooth", 0.18);
+    } catch {}
   }
 }
 
@@ -95,6 +113,7 @@ export default function VybzMainPage() {
 
   // ── GAME STATE ───────────────────────────────────────────────────────────
   const [selectedChat, setSelectedChat] = useState<{
+    sessionId?: string;
     title: string;
     participants: string[];
     topQuotes: any[];
@@ -134,10 +153,10 @@ export default function VybzMainPage() {
     const roomParam = urlParams.get("room");
     if (roomParam) {
       apiClient
-        .getRoomStatus(roomParam.toUpperCase(), pid)
+        .getRoom(roomParam.toUpperCase(), pid)
         .then((room) => {
           setActiveRoom(room);
-          setTelemetryStatus(`● ROOM: ${room.code}`);
+          setTelemetryStatus(`● ROOM: ${room.roomCode || room.code}`);
         })
         .catch(() => {
           console.log("Room query param could not be joined automatically.");
@@ -177,78 +196,65 @@ export default function VybzMainPage() {
     }
   };
 
-  // ── REAL-TIME MULTIPLAYER SYNCHRONIZATION (SSE + POLLING) ─────────────────
+  // ── REAL-TIME MULTIPLAYER SYNCHRONIZATION (DATABASE-BACKED POLLING) ─────
   useEffect(() => {
-    if (!activeRoom?.code || !playerId) return;
+    const roomIdentifier =
+      activeRoom?.roomId || activeRoom?.id || activeRoom?.roomCode || activeRoom?.code;
+    if (!roomIdentifier || !playerId) return;
 
-    let eventSource: EventSource | null = null;
-    let pollInterval: NodeJS.Timeout | null = null;
+    const isFinished =
+      activeRoom?.status === "FINISHED" || activeRoom?.status === "MATCH_OVER";
+    const intervalMs = isFinished ? 4000 : 1500;
 
-    try {
-      const sseUrl = `/api/multiplayer/events?code=${encodeURIComponent(
-        activeRoom.code
-      )}&playerId=${encodeURIComponent(playerId)}`;
-      eventSource = new EventSource(sseUrl);
-
-      eventSource.onmessage = (event) => {
-        try {
-          const freshState = JSON.parse(event.data);
-          setActiveRoom((prev: any) => {
-            // Check for sound triggers on status changes
-            if (prev?.status !== freshState.status) {
-              if (freshState.status === "QUESTION_ACTIVE") {
-                snd.click();
-              } else if (freshState.status === "QUESTION_REVEAL") {
-                const myAns = freshState.players?.find(
-                  (p: any) => p.id === playerId
-                )?.lastAnswer;
-                if (myAns?.isCorrect) {
-                  snd.success();
-                } else {
-                  snd.error();
-                }
-              } else if (freshState.status === "MATCH_OVER") {
-                snd.coin();
-              }
-            }
-            return freshState;
-          });
-
-          if (freshState.status === "MATCH_OVER") {
-            setTelemetryStatus(`● TOURNAMENT CONCLUDED`);
-          } else if (freshState.status === "QUESTION_ACTIVE") {
-            setTelemetryStatus(`● PLAYING ROUND 0${freshState.currentQuestionIndex + 1}`);
-          } else {
-            setTelemetryStatus(`● ROOM: ${freshState.code}`);
-          }
-        } catch (err) {
-          console.error("SSE parse error:", err);
-        }
-      };
-
-      eventSource.onerror = () => {
-        // Fallback to active polling if SSE disconnects
-        eventSource?.close();
-      };
-    } catch {
-      /**/
-    }
-
-    // Adaptive 2-second polling fallback
-    pollInterval = setInterval(async () => {
+    const pollInterval = setInterval(async () => {
       try {
-        const polled = await apiClient.getRoomStatus(activeRoom.code, playerId);
-        setActiveRoom(polled);
+        const freshState = await apiClient.getRoom(roomIdentifier, playerId);
+        setActiveRoom((prev: any) => {
+          if (prev?.status !== freshState.status) {
+            if (freshState.status === "QUESTION") {
+              snd.click();
+            } else if (freshState.status === "RESULTS") {
+              const myAns = freshState.players?.find(
+                (p: any) => p.userId === playerId || p.id === playerId
+              )?.lastAnswer;
+              if (myAns?.isCorrect) {
+                snd.success();
+              } else {
+                snd.error();
+              }
+            } else if (freshState.status === "FINISHED") {
+              snd.coin();
+            }
+          }
+          return freshState;
+        });
+
+        if (freshState.status === "FINISHED") {
+          setTelemetryStatus("● TOURNAMENT CONCLUDED");
+        } else if (
+          freshState.status === "QUESTION" ||
+          freshState.status === "RESULTS"
+        ) {
+          setTelemetryStatus(`● PLAYING ROUND 0${(freshState.currentQuestionIndex ?? 0) + 1}`);
+        } else {
+          setTelemetryStatus(`● ROOM: ${freshState.roomCode || freshState.code}`);
+        }
       } catch {
-        /**/
+        // Non-fatal polling error
       }
-    }, 2000);
+    }, intervalMs);
 
     return () => {
-      eventSource?.close();
-      if (pollInterval) clearInterval(pollInterval);
+      clearInterval(pollInterval);
     };
-  }, [activeRoom?.code, playerId]);
+  }, [
+    activeRoom?.roomId,
+    activeRoom?.id,
+    activeRoom?.roomCode,
+    activeRoom?.code,
+    activeRoom?.status,
+    playerId,
+  ]);
 
   // Initial Hero animations
   useEffect(() => {
@@ -261,11 +267,12 @@ export default function VybzMainPage() {
   const handleRoomCreatedOrJoined = (room: any) => {
     snd.success();
     setActiveRoom(room);
-    setTelemetryStatus(`● ROOM: ${room.code}`);
+    const code = room.roomCode || room.code;
+    setTelemetryStatus(`● ROOM: ${code}`);
 
     // Update URL query string without page reload
     if (typeof window !== "undefined") {
-      const newUrl = `${window.location.pathname}?room=${room.code}`;
+      const newUrl = `${window.location.pathname}?room=${code}`;
       window.history.pushState({ path: newUrl }, "", newUrl);
     }
 
@@ -275,8 +282,9 @@ export default function VybzMainPage() {
 
   const handleStartMatch = async () => {
     if (!activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id || activeRoom.roomCode || activeRoom.code;
     try {
-      const room = await apiClient.startMatch(activeRoom.code, playerId);
+      const room = await apiClient.startMatch(rId, playerId);
       setActiveRoom(room);
       snd.coin();
       scrollTo("section-trivia-arena");
@@ -288,20 +296,29 @@ export default function VybzMainPage() {
 
   const handleSelectOption = async (key: ArcadeOptionKey) => {
     if (!activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id || activeRoom.roomCode || activeRoom.code;
+    const currentQ = activeRoom.currentQuestion || activeRoom.activeQuestion;
+    if (!currentQ?.id) return;
+
     try {
-      const res = await apiClient.submitAnswer(activeRoom.code, playerId, key);
-      if (res.room) {
-        setActiveRoom(res.room);
-      }
+      await apiClient.submitRoomAnswer(rId, {
+        userId: playerId,
+        questionId: currentQ.id,
+        selectedAnswer: key,
+        responseTimeMs: 1500,
+      });
+      const refreshed = await apiClient.getRoom(rId, playerId);
+      setActiveRoom(refreshed);
     } catch (err: any) {
-      console.error(err);
+      console.error("Answer submit error:", err);
     }
   };
 
   const handleAdvanceQuestion = async () => {
     if (!activeRoom) return;
+    const rId = activeRoom.roomId || activeRoom.id || activeRoom.roomCode || activeRoom.code;
     try {
-      const room = await apiClient.advanceQuestion(activeRoom.code, playerId);
+      const room = await apiClient.advanceQuestion(rId, playerId);
       setActiveRoom(room);
       snd.click();
     } catch (err: any) {
@@ -312,7 +329,23 @@ export default function VybzMainPage() {
   const handleResetMatch = async () => {
     if (!activeRoom) return;
     try {
-      const room = await apiClient.resetMatch(activeRoom.code, playerId);
+      let sessionId = selectedChat.sessionId;
+      if (!sessionId) {
+        const ingestRes = await apiClient.ingestChat(selectedChat.rawText, selectedChat.title);
+        sessionId = ingestRes.sessionId;
+      }
+      const gameRes = await apiClient.generateGame({
+        sessionId,
+        rom: "ROM // 001: WHO SAID IT?",
+        questionCount: 5,
+        userId: playerId,
+      });
+      const roomRes = await apiClient.createRoom({
+        gameId: gameRes.gameId,
+        hostUserId: playerId,
+        displayName: playerName.trim(),
+      });
+      const room = await apiClient.getRoom(roomRes.roomId, playerId);
       setActiveRoom(room);
       snd.coin();
       scrollTo("section-lobby");
@@ -324,10 +357,14 @@ export default function VybzMainPage() {
   // Determine if Arena should be displayed
   const isMatchActive =
     activeRoom &&
-    (activeRoom.status === "QUESTION_ACTIVE" ||
+    (activeRoom.status === "QUESTION" ||
+      activeRoom.status === "RESULTS" ||
+      activeRoom.status === "QUESTION_ACTIVE" ||
       activeRoom.status === "QUESTION_REVEAL");
 
-  const isMatchOver = activeRoom && activeRoom.status === "MATCH_OVER";
+  const isMatchOver =
+    activeRoom &&
+    (activeRoom.status === "FINISHED" || activeRoom.status === "MATCH_OVER");
 
   return (
     <div

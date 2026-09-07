@@ -8,6 +8,7 @@ import { TopQuote } from "@/types/api";
 
 interface DocumentSelectorProps {
   onSelectChat: (chat: {
+    sessionId?: string;
     title: string;
     participants: string[];
     topQuotes: TopQuote[];
@@ -28,6 +29,7 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [customChatData, setCustomChatData] = useState<{
+    sessionId?: string;
     title: string;
     participants: string[];
     topQuotes: TopQuote[];
@@ -38,16 +40,29 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
 
   const activePreset = CHAT_PRESETS.find((p) => p.id === selectedPresetId) || CHAT_PRESETS[0];
 
-  const handleSelectPreset = (preset: ChatPreset) => {
+  const handleSelectPreset = async (preset: ChatPreset) => {
     playClickSound();
     setIsCustomMode(false);
     setSelectedPresetId(preset.id);
-    onSelectChat({
-      title: preset.title,
-      participants: preset.participants,
-      topQuotes: preset.topQuotes,
-      rawText: preset.rawChatText,
-    });
+
+    try {
+      // Ingest into backend to register session and messages
+      const res = await apiClient.ingestChat(preset.rawChatText, preset.title);
+      onSelectChat({
+        sessionId: res.sessionId,
+        title: preset.title,
+        participants: res.participants,
+        topQuotes: res.topQuotes,
+        rawText: preset.rawChatText,
+      });
+    } catch {
+      onSelectChat({
+        title: preset.title,
+        participants: preset.participants,
+        topQuotes: preset.topQuotes,
+        rawText: preset.rawChatText,
+      });
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,10 +75,11 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
     setCustomFileName(file.name);
 
     try {
+      const res = await apiClient.ingestChat(file);
       const rawText = await file.text();
-      const res = await apiClient.ingestChat(rawText, file.name);
 
       const parsedData = {
+        sessionId: res.sessionId,
         title: file.name.replace(/\.[^/.]+$/, "").toUpperCase() + " // LORE",
         participants: res.participants,
         topQuotes: res.topQuotes,

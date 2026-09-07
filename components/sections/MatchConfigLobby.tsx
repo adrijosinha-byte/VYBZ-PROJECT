@@ -7,6 +7,7 @@ import { TopQuote } from "@/types/api";
 
 interface MatchConfigLobbyProps {
   chatLore: {
+    sessionId?: string;
     title: string;
     participants: string[];
     topQuotes: TopQuote[];
@@ -74,7 +75,9 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
 
-  const isHost = activeRoom ? activeRoom.hostId === playerId : tab === "host";
+  const isHost = activeRoom
+    ? activeRoom.hostId === playerId || activeRoom.hostUserId === playerId
+    : tab === "host";
 
   // Host creates a room
   const handleCreateRoom = async () => {
@@ -87,15 +90,29 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
     playClickSound();
 
     try {
-      const room = await apiClient.createRoom(playerId, playerName.trim(), {
-        roundCount,
-        mode: selectedMode,
-        targetPlayers,
-        timeLimitSeconds,
-        chatTitle: chatLore.title,
-        participants: chatLore.participants,
-        topQuotes: chatLore.topQuotes,
+      let sessionId = chatLore.sessionId;
+      if (!sessionId) {
+        const ingestRes = await apiClient.ingestChat(chatLore.rawText, chatLore.title);
+        sessionId = ingestRes.sessionId;
+      }
+
+      // 1. Generate Game
+      const gameRes = await apiClient.generateGame({
+        sessionId,
+        rom: selectedMode,
+        questionCount: roundCount,
+        userId: playerId,
       });
+
+      // 2. Create Multiplayer Room
+      const createRes = await apiClient.createRoom({
+        gameId: gameRes.gameId,
+        hostUserId: playerId,
+        displayName: playerName.trim(),
+      });
+
+      // 3. Fetch Full Room State
+      const room = await apiClient.getRoom(createRes.roomId, playerId);
       onRoomCreatedOrJoined(room);
     } catch (err: any) {
       console.error(err);
@@ -120,11 +137,12 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
     playClickSound();
 
     try {
-      const room = await apiClient.joinRoom(
-        joinCodeInput.trim(),
-        playerId,
-        playerName.trim()
-      );
+      const joinRes = await apiClient.joinRoom({
+        roomCode: joinCodeInput.trim(),
+        userId: playerId,
+        displayName: playerName.trim(),
+      });
+      const room = await apiClient.getRoom(joinRes.roomId, playerId);
       onRoomCreatedOrJoined(room);
     } catch (err: any) {
       console.error(err);
@@ -138,12 +156,35 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
   const handleCopyLink = () => {
     playClickSound();
     if (!activeRoom) return;
-    const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(
-      activeRoom.code
-    )}`;
-    navigator.clipboard.writeText(shareUrl);
+    const code = activeRoom.roomCode || activeRoom.code;
+    const shareUrl = `${window.location.origin}/?room=${encodeURIComponent(code)}`;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).catch(() => {
+          fallbackCopy(shareUrl);
+        });
+      } else {
+        fallbackCopy(shareUrl);
+      }
+    } catch {
+      fallbackCopy(shareUrl);
+    }
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
+  };
+
+  const fallbackCopy = (text: string) => {
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.left = "-9999px";
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    } catch {}
   };
 
   return (
@@ -630,7 +671,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                     letterSpacing: "0.1em",
                   }}
                 >
-                  {activeRoom.code}
+                  {activeRoom.roomCode || activeRoom.code}
                 </div>
               </div>
 
@@ -656,7 +697,7 @@ export const MatchConfigLobby: React.FC<MatchConfigLobbyProps> = ({
                     padding: "10px 16px",
                   }}
                 >
-                  {activeRoom.settings.roundCount} ROUNDS • {activeRoom.settings.timeLimitSeconds}S TIMER
+                  {activeRoom.settings?.roundCount ?? activeRoom.totalQuestions ?? 5} ROUNDS • {activeRoom.settings?.timeLimitSeconds ?? 15}S TIMER
                 </div>
               </div>
             </div>
