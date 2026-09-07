@@ -373,11 +373,10 @@ export async function submitRoomAnswer(params: {
     ? new Date(pollState.questionDeadline).getTime()
     : null;
 
-  // Allow a 6-second network/timeout grace period for auto-lock answers submitted when time expires
+  // Allow an 8-second network/timeout grace period for auto-lock answers submitted when time expires
   const isTimeoutGracePeriod =
     pollState.status === "RESULTS" &&
-    deadlineMs !== null &&
-    now - deadlineMs <= 6000;
+    (deadlineMs === null || now - deadlineMs <= 8000);
 
   if (pollState.status !== "QUESTION" && !isTimeoutGracePeriod) {
     throw new Error("QUESTION_INACTIVE // Answers cannot be submitted in this state.");
@@ -423,9 +422,13 @@ export async function submitRoomAnswer(params: {
   const timeLimitSec = settings.timeLimitSeconds || 15;
 
   const isCorrect = params.selectedAnswer === currentQ.correctAnswer;
+  const effectiveResponseTimeMs = isTimeoutGracePeriod
+    ? Math.max(params.responseTimeMs, timeLimitSec * 1000)
+    : params.responseTimeMs;
+
   const scoreResult = calculateAnswerPoints({
     isCorrect,
-    responseTimeMs: params.responseTimeMs,
+    responseTimeMs: effectiveResponseTimeMs,
     timeLimitSeconds: timeLimitSec,
   });
 

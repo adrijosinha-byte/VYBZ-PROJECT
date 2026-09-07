@@ -7,7 +7,7 @@ import { ArcadeOptionKey } from "@/types/api";
 interface TriviaArenaProps {
   roomState: any;
   playerId: string;
-  onSelectOption: (key: ArcadeOptionKey) => void;
+  onSelectOption: (key: ArcadeOptionKey, questionId?: string) => void;
   onAdvanceQuestion: () => void;
   playClickSound: () => void;
   playSuccessSound: () => void;
@@ -38,15 +38,34 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
   // Selected option state & manual lock-in state
   const [selectedKey, setSelectedKey] = useState<ArcadeOptionKey | null>(null);
   const [isLockedIn, setIsLockedIn] = useState<boolean>(false);
+  const selectedKeyRef = useRef<ArcadeOptionKey | null>(null);
+  const answerSubmittedRef = useRef<boolean>(false);
+
+  // Keep ref synchronized with state
+  useEffect(() => {
+    selectedKeyRef.current = selectedKey;
+  }, [selectedKey]);
 
   // Reset on question change
   useEffect(() => {
     setSelectedKey(null);
+    selectedKeyRef.current = null;
     setIsLockedIn(false);
+    answerSubmittedRef.current = false;
   }, [activeQ?.id, roomState?.currentQuestionIndex]);
 
+  // Sync if server reports answer has already been submitted
+  useEffect(() => {
+    if (hasAnswered) {
+      answerSubmittedRef.current = true;
+    }
+  }, [hasAnswered]);
+
   const effectiveLocked = Boolean(hasAnswered || isLockedIn);
-  const lockedKey = myAnswer?.optionKey || (isLockedIn ? selectedKey : null);
+  const lockedKey =
+    myAnswer?.optionKey ||
+    myAnswer?.selectedAnswer ||
+    (isLockedIn ? (selectedKey || selectedKeyRef.current) : null);
 
   // Monotonic High-Precision Timer Engine
   // Uses client performance.now() to guarantee 100% uniform 1000ms-per-second decrements with zero clock skew
@@ -176,6 +195,26 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
     }
   }, [roomState?.questionDeadline, roomState?.remainingSeconds, isReveal]);
 
+  // Unified lock-in and submit handler (works for both manual and auto-lock on timeout/reveal)
+  const commitSelectedAnswer = useCallback(
+    (keyToLock?: ArcadeOptionKey | null) => {
+      const chosen = keyToLock || selectedKeyRef.current || selectedKey;
+      if (!chosen || effectiveLocked || answerSubmittedRef.current) return;
+
+      answerSubmittedRef.current = true;
+      setIsLockedIn(true);
+      playClickSound();
+      onSelectOption(chosen, activeQ?.id);
+    },
+    [effectiveLocked, selectedKey, playClickSound, onSelectOption, activeQ?.id]
+  );
+
+  // Dedicated action to lock in the chosen answer manually
+  const handleLockIn = useCallback(() => {
+    if (effectiveLocked || answerSubmittedRef.current || isReveal) return;
+    commitSelectedAnswer(selectedKey);
+  }, [effectiveLocked, isReveal, commitSelectedAnswer, selectedKey]);
+
   // Continuous 60fps timer animation loop: glides cooldown bar and updates seconds uniformly
   useEffect(() => {
     if (isReveal) {
@@ -183,6 +222,10 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
         progressBarRef.current.style.width = "0%";
       }
       setDisplaySeconds(0);
+      const chosen = selectedKeyRef.current || selectedKey;
+      if (chosen && !effectiveLocked && !answerSubmittedRef.current) {
+        commitSelectedAnswer(chosen);
+      }
       return;
     }
 
@@ -211,6 +254,14 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
 
       setDisplaySeconds((prev) => (prev !== secs ? secs : prev));
 
+      // As soon as timer hits 0ms, auto-commit chosen answer if not locked in yet
+      if (timeLeftMs <= 0) {
+        const chosen = selectedKeyRef.current || selectedKey;
+        if (chosen && !effectiveLocked && !answerSubmittedRef.current) {
+          commitSelectedAnswer(chosen);
+        }
+      }
+
       if (timeLeftMs > 0 && !isReveal) {
         frameId = requestAnimationFrame(tick);
       }
@@ -218,22 +269,27 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [isReveal, timeLimit, activeQ?.id, roomState?.currentQuestionIndex, allPlayersLockedIn]);
+  }, [
+    isReveal,
+    timeLimit,
+    activeQ?.id,
+    roomState?.currentQuestionIndex,
+    allPlayersLockedIn,
+    effectiveLocked,
+    commitSelectedAnswer,
+    selectedKey,
+  ]);
 
-  // Dedicated action to lock in the chosen answer
-  const handleLockIn = useCallback(() => {
-    if (!selectedKey || effectiveLocked || isReveal) return;
-    playClickSound();
-    setIsLockedIn(true);
-    onSelectOption(selectedKey);
-  }, [selectedKey, effectiveLocked, isReveal, playClickSound, onSelectOption]);
-
-  // Automatically register currently selected MCQ as the option selected if timer reaches 0 before manual lock-in
+  // Automatically register currently selected MCQ as the option selected if timer reaches 0 or round ends
   useEffect(() => {
-    if (displaySeconds === 0 && selectedKey && !effectiveLocked && !isReveal) {
-      handleLockIn();
+    if (effectiveLocked || answerSubmittedRef.current) return;
+    const chosen = selectedKeyRef.current || selectedKey;
+    if (!chosen) return;
+
+    if (displaySeconds === 0 || isReveal) {
+      commitSelectedAnswer(chosen);
     }
-  }, [displaySeconds, selectedKey, effectiveLocked, isReveal, handleLockIn]);
+  }, [displaySeconds, isReveal, effectiveLocked, commitSelectedAnswer, selectedKey]);
 
   // Keyboard shortcut listener:
   // A, B, C, D to switch between options freely
@@ -245,8 +301,9 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
       if (key === "A" || key === "B" || key === "C" || key === "D") {
         playClickSound();
         setSelectedKey(key as ArcadeOptionKey);
+        selectedKeyRef.current = key as ArcadeOptionKey;
       } else if (e.key === "Enter") {
-        if (selectedKey) {
+        if (selectedKey || selectedKeyRef.current) {
           handleLockIn();
         }
       }
@@ -498,9 +555,15 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
             >
               {activeQ.options.map((opt: any) => {
                 const isSelectedTentatively = !effectiveLocked && selectedKey === opt.key;
-                const isMyLockedAnswer = effectiveLocked && (lockedKey === opt.key || (isLockedIn && selectedKey === opt.key));
+                const isMyLockedAnswer =
+                  effectiveLocked &&
+                  (lockedKey === opt.key ||
+                    (isLockedIn && (selectedKey === opt.key || selectedKeyRef.current === opt.key)));
                 const isCorrectOption = isReveal && activeQ.correctAnswer === opt.key;
-                const isWrongSelection = isReveal && isMyLockedAnswer && !myAnswer?.isCorrect;
+                const isWrongSelection =
+                  isReveal &&
+                  isMyLockedAnswer &&
+                  (myAnswer ? !myAnswer.isCorrect : (activeQ.correctAnswer ? activeQ.correctAnswer !== opt.key : false));
 
                 let borderColor = "var(--border)";
                 let bgColor = "var(--void)";
@@ -537,6 +600,7 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                       if (!effectiveLocked && !isReveal) {
                         playClickSound();
                         setSelectedKey(opt.key);
+                        selectedKeyRef.current = opt.key;
                       }
                     }}
                     disabled={effectiveLocked || isReveal}
@@ -744,13 +808,20 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                     style={{
                       fontSize: 13,
                       fontWeight: 800,
-                      color: myAnswer?.isCorrect ? "var(--green)" : "var(--red)",
+                      color:
+                        myAnswer?.isCorrect ||
+                        (!myAnswer && lockedKey && activeQ.correctAnswer && lockedKey === activeQ.correctAnswer)
+                          ? "var(--green)"
+                          : "var(--red)",
                       marginBottom: 4,
                     }}
                   >
-                    {myAnswer?.isCorrect
-                      ? `✔ CORRECT ATTRIBUTION // +${myAnswer.pointsAwarded || 500} PTS AWARDED!`
-                      : "✖ INCORRECT ATTRIBUTION // +0 PTS"}
+                    {myAnswer?.isCorrect ||
+                    (!myAnswer && lockedKey && activeQ.correctAnswer && lockedKey === activeQ.correctAnswer)
+                      ? `✔ CORRECT ATTRIBUTION // +${myAnswer?.pointsAwarded || 500} PTS AWARDED!`
+                      : lockedKey
+                      ? "✖ INCORRECT ATTRIBUTION // +0 PTS"
+                      : "✖ TIME EXPIRED // NO OPTION SELECTED // +0 PTS"}
                   </div>
                   <div className="jb" style={{ fontSize: 11, color: "var(--txt)" }}>
                     {activeQ.explanation || "Group chat lore verified from source log."}

@@ -331,16 +331,17 @@ export default function VybzMainPage() {
     }
   };
 
-  const handleSelectOption = async (key: ArcadeOptionKey) => {
+  const handleSelectOption = async (key: ArcadeOptionKey, questionId?: string) => {
     if (!activeRoom) return;
     const rId = activeRoom.roomId || activeRoom.id || activeRoom.roomCode || activeRoom.code;
     const currentQ = activeRoom.currentQuestion || activeRoom.activeQuestion;
-    if (!currentQ?.id) return;
+    const targetQId = questionId || currentQ?.id;
+    if (!targetQId) return;
 
     try {
       await apiClient.submitRoomAnswer(rId, {
         userId: playerId,
-        questionId: currentQ.id,
+        questionId: targetQId,
         selectedAnswer: key,
         responseTimeMs: 1500,
       });
