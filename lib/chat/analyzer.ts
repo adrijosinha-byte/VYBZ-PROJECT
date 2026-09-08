@@ -5,6 +5,7 @@
 import { generateStructuredJson, isGeminiConfigured } from "../gemini";
 import { Type, Schema } from "@google/genai";
 import { ParsedChatMessage, ChatAnalysisResult } from "@/types/vybz";
+import { analyzeParticipantPersonalities } from "./personality";
 
 export async function analyzeChatLore(
   messages: ParsedChatMessage[],
@@ -144,20 +145,16 @@ recurringArguments (string[]), recurringActivities (string[])`;
         },
       ],
       groupDynamics: ["chaotic banter", "mutual accountability", "inside lore archives"],
-      personalitySignals: participants.reduce((acc, p, i) => {
-        const roles = [
-          "CHAT HISTORIAN",
-          "CHAOS OPERATOR",
-          "AUX TYRANT",
-          "VOICE NOTE POET",
-          "SERIAL CONTRARIAN",
-          "VOICE OF REASON",
-        ];
-        acc[p] = roles[i % roles.length];
-        return acc;
-      }, {} as Record<string, string>),
-      recurringArguments: ["who touched the playlist", "who ordered pineapple on pizza"],
-      recurringActivities: ["late night voice notes", "debugging production code"],
+      personalitySignals: (() => {
+        const lore = analyzeParticipantPersonalities(messages, participants);
+        const map: Record<string, string> = {};
+        lore.participants.forEach((p) => {
+          map[p.name] = p.archetype;
+        });
+        return map;
+      })(),
+      recurringArguments: ["who touched the playlist", "who ordered food", "who is actually on the way"],
+      recurringActivities: ["late night voice notes", "last minute plans", "arguing over music"],
     },
   };
 }
