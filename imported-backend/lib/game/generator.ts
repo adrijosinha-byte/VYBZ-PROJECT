@@ -1,5 +1,5 @@
 // 5 VYBZ ROM Generator with Strict Source Grounding & Validation
-// Generates questions using Google Gemini Models API and enforces critical invariants.
+// Generates questions using OpenAI Responses API and enforces critical invariants.
 
 import { generateStructuredJson, isGeminiConfigured } from "../gemini";
 import { Type, Schema } from "@google/genai";

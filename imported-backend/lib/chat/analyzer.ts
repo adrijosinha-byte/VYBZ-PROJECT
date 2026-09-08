@@ -1,5 +1,5 @@
-// Gemini Chat Analyzer for VYBZ // ARCADE SYSTEM
-// Extracts structured facts and inferences using Google Gemini API.
+// OpenAI Chat Analyzer for VYBZ // ARCADE SYSTEM
+// Extracts structured facts and inferences using OpenAI Responses API.
 // Strictly separates verifiable source facts from AI-derived inferences.
 
 import { generateStructuredJson, isGeminiConfigured } from "../gemini";
@@ -87,7 +87,7 @@ recurringArguments (string[]), recurringActivities (string[])`;
             },
           },
           groupDynamics: { type: Type.ARRAY, items: { type: Type.STRING } },
-          personalitySignals: { type: Type.OBJECT },
+          personalitySignals: { type: Type.OBJECT }, // Not strictly typed in SDK schema for arbitrary keys, but fallback applies
           recurringArguments: { type: Type.ARRAY, items: { type: Type.STRING } },
           recurringActivities: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
