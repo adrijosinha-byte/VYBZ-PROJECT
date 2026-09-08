@@ -871,3 +871,57 @@ export async function getRoomPollState(
     },
   } as any;
 }
+
+// 8. LEAVE ROOM
+export async function leaveGameRoom(
+  roomIdOrCode: string,
+  userId: string
+): Promise<{ success: boolean }> {
+  const roomId = await resolveRoomId(roomIdOrCode);
+
+  if (isDatabaseConfigured) {
+    try {
+      const room = await db.gameRoom.findUnique({
+        where: { id: roomId },
+        include: { players: true },
+      });
+
+      if (room) {
+        await db.roomPlayer.deleteMany({
+          where: { roomId, userId },
+        });
+
+        const remaining = room.players.filter((p) => p.userId !== userId);
+        if (remaining.length === 0) {
+          await db.gameRoom.update({
+            where: { id: roomId },
+            data: { status: "FINISHED" },
+          });
+        } else if (room.hostUserId === userId) {
+          await db.gameRoom.update({
+            where: { id: roomId },
+            data: { hostUserId: remaining[0].userId },
+          });
+        }
+        return { success: true };
+      }
+    } catch (err) {
+      console.warn("DB leaveGameRoom failed, falling back to memory:", err);
+    }
+  }
+
+  // Memory fallback
+  const memRoom = memoryDb.gameRooms.get(roomId);
+  if (memRoom) {
+    memRoom.players.delete(userId);
+    const remaining = Array.from(memRoom.players.values());
+    if (remaining.length === 0) {
+      memRoom.status = "FINISHED";
+    } else if (memRoom.hostUserId === userId) {
+      memRoom.hostUserId = (remaining[0] as any)?.userId || "";
+    }
+    return { success: true };
+  }
+
+  return { success: false };
+}

@@ -205,7 +205,7 @@ export const ArcadeChatUploader: React.FC<ArcadeChatUploaderProps> = ({
   };
 
   return (
-    <div style={{ position: "relative", width: "100%", maxWidth: 440 }}>
+    <div style={{ position: "relative", width: "100%" }}>
       {/* Hidden native HTML file input */}
       <input
         ref={fileInputRef}
@@ -231,32 +231,34 @@ export const ArcadeChatUploader: React.FC<ArcadeChatUploaderProps> = ({
           position: "relative",
           background:
             state === "ERROR"
-              ? "rgba(255, 51, 75, 0.08)"
+              ? "rgba(255, 51, 75, 0.1)"
               : state === "SUCCESS"
-              ? "rgba(57, 255, 20, 0.06)"
+              ? "rgba(57, 255, 20, 0.08)"
               : isDragOver
-              ? "rgba(0, 229, 255, 0.1)"
-              : "var(--void)",
-          border: `1px solid ${
+              ? "rgba(0, 229, 255, 0.18)"
+              : "rgba(8, 12, 18, 0.9)",
+          border: `1.5px solid ${
             state === "ERROR"
               ? "var(--red)"
               : state === "SUCCESS"
               ? "var(--green)"
               : isDragOver
               ? "var(--cyan)"
-              : "var(--border2)"
+              : "rgba(0, 229, 255, 0.45)"
           }`,
           boxShadow:
             state === "SUCCESS"
-              ? "0 0 16px rgba(57,255,20,0.2), 3px 3px 0 #000000"
+              ? "0 0 24px rgba(57,255,20,0.3), 3px 3px 0 #000000"
               : state === "ERROR"
-              ? "0 0 16px rgba(255,51,75,0.25), 3px 3px 0 #000000"
-              : "3px 3px 0 #000000",
-          padding: "14px 18px",
+              ? "0 0 24px rgba(255,51,75,0.3), 3px 3px 0 #000000"
+              : isDragOver
+              ? "0 0 35px rgba(0,229,255,0.45), 3px 3px 0 #000000"
+              : "0 0 20px rgba(0,229,255,0.12), 3px 3px 0 #000000",
+          padding: "16px 20px",
           cursor: state === "PROCESSING" ? "wait" : "pointer",
           overflow: "hidden",
           userSelect: "none",
-          transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
+          transition: "border-color 0.18s, background 0.18s, box-shadow 0.18s",
         }}
       >
         {/* Dynamic Scanline Sweep Highlight */}
@@ -413,24 +415,26 @@ export const ArcadeChatUploader: React.FC<ArcadeChatUploaderProps> = ({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 12,
+                gap: 14,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {/* Tactical Upload Icon */}
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                {/* Glowing Tactical Upload Icon */}
                 <div
                   style={{
-                    width: 28,
-                    height: 28,
-                    background: "rgba(57,255,20,0.12)",
-                    border: "1px solid var(--border2)",
+                    width: 38,
+                    height: 38,
+                    background: "rgba(0,229,255,0.14)",
+                    border: "1px solid var(--cyan)",
+                    boxShadow: "0 0 12px rgba(0,229,255,0.35)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "var(--green)",
+                    color: "var(--cyan)",
                     fontFamily: "var(--jb)",
-                    fontSize: 14,
-                    fontWeight: 700,
+                    fontSize: 18,
+                    fontWeight: 800,
+                    flexShrink: 0,
                   }}
                 >
                   ↑
@@ -439,36 +443,48 @@ export const ArcadeChatUploader: React.FC<ArcadeChatUploaderProps> = ({
                   <div
                     className="sg"
                     style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      letterSpacing: "0.06em",
+                      fontSize: 14,
+                      fontWeight: 800,
+                      letterSpacing: "0.04em",
                       color: "var(--txt)",
+                      marginBottom: 3,
                     }}
                   >
-                    INSERT GROUP CHAT FILE
+                    CLICK TO BROWSE OR DRAG & DROP
                   </div>
                   <div
                     className="jb"
                     style={{
-                      fontSize: 9,
-                      color: "var(--muted)",
-                      letterSpacing: "0.06em",
+                      fontSize: 10,
+                      color: "var(--cyan)",
+                      letterSpacing: "0.08em",
+                      fontWeight: 700,
                     }}
                   >
-                    CLICK OR DRAG CHAT ARCHIVE HERE
+                    INSTANT AUTONOMOUS INGESTION PORT →
                   </div>
                 </div>
               </div>
+
+              {/* High-visibility Action Badge */}
               <div
                 className="jb"
                 style={{
+                  background: "var(--cyan)",
+                  color: "#000",
                   fontSize: 10,
-                  fontWeight: 700,
-                  color: "var(--green)",
-                  letterSpacing: "0.1em",
+                  fontWeight: 800,
+                  padding: "7px 14px",
+                  letterSpacing: "0.12em",
+                  boxShadow: "0 0 14px rgba(0,229,255,0.45)",
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                [LOAD →]
+                <span>CHOOSE FILE</span>
+                <span>→</span>
               </div>
             </div>
           )}

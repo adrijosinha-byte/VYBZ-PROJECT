@@ -184,7 +184,15 @@ class ApiClient {
     );
   }
 
-  // 14. Get Player Profile
+  // 14. Leave Room
+  public async leaveRoom(roomId: string, userId: string): Promise<{ success: boolean }> {
+    return this.postJson<{ userId: string }, { success: boolean }>(
+      `/api/rooms/${encodeURIComponent(roomId)}/leave`,
+      { userId }
+    );
+  }
+
+  // 15. Get Player Profile
   public async getProfile(userId: string): Promise<PlayerBehavioralProfile> {
     return this.getJson<PlayerBehavioralProfile>(
       `/api/profile?userId=${encodeURIComponent(userId)}`

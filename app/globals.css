@@ -373,6 +373,60 @@ body::after{
 @keyframes pulse-g{0%,100%{opacity:1}50%{opacity:0.5}}
 .pulse-g{animation:pulse-g 2s ease-in-out infinite}
 
+@keyframes pulse-c{0%,100%{opacity:1;box-shadow:0 0 8px var(--cyan)}50%{opacity:0.4;box-shadow:0 0 2px var(--cyan)}}
+.pulse-c{animation:pulse-c 1.8s ease-in-out infinite}
+
+@keyframes pulse-y{0%,100%{opacity:1;box-shadow:0 0 8px var(--yellow)}50%{opacity:0.4;box-shadow:0 0 2px var(--yellow)}}
+.pulse-y{animation:pulse-y 1.8s ease-in-out infinite}
+
+@keyframes pulse-r{0%,100%{opacity:1;box-shadow:0 0 12px var(--red)}50%{opacity:0.3;box-shadow:0 0 2px var(--red)}}
+.pulse-r{animation:pulse-r 0.8s ease-in-out infinite}
+
+@keyframes arena-urgent-glow{
+  0%,100%{box-shadow:0 0 45px rgba(255,51,75,0.45), inset 0 0 25px rgba(255,51,75,0.15); border-color: rgba(255,51,75,0.85)}
+  50%{box-shadow:0 0 15px rgba(255,51,75,0.15), inset 0 0 10px rgba(255,51,75,0.05); border-color: rgba(255,51,75,0.35)}
+}
+.arena-urgent{animation:arena-urgent-glow 0.85s ease-in-out infinite !important}
+
+@keyframes neon-border-pulse{
+  0%,100%{box-shadow:0 0 25px rgba(0,229,255,0.22), inset 0 0 15px rgba(0,229,255,0.05)}
+  50%{box-shadow:0 0 40px rgba(0,229,255,0.38), inset 0 0 25px rgba(0,229,255,0.1)}
+}
+.uploader-glow{animation:neon-border-pulse 2.5s ease-in-out infinite}
+
+/* ── TRIVIA ARENA DYNAMICS & HOVER STATES ─────────────────────────────────── */
+@keyframes timer-heartbeat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+.timer-pulse-urgent {
+  animation: timer-heartbeat 0.6s ease-in-out infinite;
+}
+
+.trivia-option-pad {
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease !important;
+  will-change: transform;
+}
+.trivia-option-pad:not(:disabled):hover {
+  transform: translateY(-4px) scale(1.015);
+  border-color: var(--cyan) !important;
+  box-shadow: 0 8px 24px rgba(0, 229, 255, 0.25), 0 0 14px rgba(0, 229, 255, 0.35) !important;
+}
+.trivia-option-pad:not(:disabled):active {
+  transform: translateY(1px) scale(0.99);
+}
+
+@keyframes splash-intro {
+  0% { transform: scale(0.85); opacity: 0; filter: blur(6px); }
+  25% { transform: scale(1.04); opacity: 1; filter: blur(0); }
+  75% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.02); opacity: 0; pointer-events: none; }
+}
+.round-splash-anim {
+  animation: splash-intro 1.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+}
+
 /* ── FLICKER ───────────────────────────────────────────────────────────────── */
 @keyframes flicker{
   0%,100%{opacity:1}91%{opacity:1}92%{opacity:0.82}93%{opacity:1}95%{opacity:0.9}96%{opacity:1}
@@ -417,13 +471,19 @@ input[type="number"] {
 /* ── SCROLL REVEAL UTILITIES ───────────────────────────────────────────────── */
 .reveal-fade-up {
   will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 .reveal-stagger-item {
   will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 .reveal-line-expand {
   transform-origin: left center;
   will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 @media (prefers-reduced-motion: reduce) {
   .reveal-fade-up,

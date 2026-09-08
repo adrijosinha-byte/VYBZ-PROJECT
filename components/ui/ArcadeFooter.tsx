@@ -45,21 +45,22 @@ export const ArcadeFooter: React.FC<ArcadeFooterProps> = ({
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: footerRef.current,
-          start: "top 85%",
-          toggleActions: "play none none none",
+          start: "top 88%",
+          end: "bottom top",
+          toggleActions: "play reverse play reverse",
         },
       });
 
       // Initial states
-      gsap.set(logoRef.current, { opacity: 0, y: 30, scale: 0.96 });
+      gsap.set(logoRef.current, { opacity: 0, y: 32, scale: 0.96 });
       gsap.set(hudLinesRef.current, { scaleX: 0, opacity: 0 });
-      gsap.set(telemetryRef.current, { opacity: 0, y: 15 });
+      gsap.set(telemetryRef.current, { opacity: 0, y: 20 });
 
       tl.to(hudLinesRef.current, {
         scaleX: 1,
         opacity: 1,
-        duration: 0.5,
-        ease: "power2.out",
+        duration: 0.7,
+        ease: "power3.out",
       })
         .to(
           logoRef.current,
@@ -67,26 +68,26 @@ export const ArcadeFooter: React.FC<ArcadeFooterProps> = ({
             opacity: 1,
             y: 0,
             scale: 1,
-            duration: 0.6,
-            ease: "back.out(1.4)",
+            duration: 0.8,
+            ease: "power3.out",
           },
-          "-=0.2"
+          "-=0.4"
         )
         .to(
           telemetryRef.current,
           {
             opacity: 1,
             y: 0,
-            duration: 0.45,
-            ease: "power2.out",
+            duration: 0.65,
+            ease: "power3.out",
           },
-          "-=0.3"
+          "-=0.45"
         )
         .fromTo(
           scanSweepRef.current,
           { top: "-10%", opacity: 0.8 },
-          { top: "110%", opacity: 0, duration: 0.7, ease: "power2.inOut" },
-          "-=0.4"
+          { top: "110%", opacity: 0, duration: 0.85, ease: "power2.inOut" },
+          "-=0.5"
         );
     }, footerRef);
 

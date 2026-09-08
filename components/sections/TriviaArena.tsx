@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
+import gsap from "gsap";
 import { Barcode } from "@/components/ui/Barcode";
 import { ArcadeOptionKey } from "@/types/api";
 
@@ -35,6 +36,16 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
   const myAnswer = localPlayer?.lastAnswer;
   const hasAnswered = localPlayer?.hasAnsweredCurrent;
 
+  // Animation refs & dynamic loading state
+  const cabinetRef = useRef<HTMLDivElement>(null);
+  const laserScanRef = useRef<HTMLDivElement>(null);
+  const promptHeaderRef = useRef<HTMLDivElement>(null);
+  const quoteBoxRef = useRef<HTMLDivElement>(null);
+  const optionsGridRef = useRef<HTMLDivElement>(null);
+  const telemetryBarRef = useRef<HTMLDivElement>(null);
+  const [showRoundSplash, setShowRoundSplash] = useState<boolean>(true);
+  const hasPlayedRevealSoundRef = useRef<string>("");
+
   // Selected option state & manual lock-in state
   const [selectedKey, setSelectedKey] = useState<ArcadeOptionKey | null>(null);
   const [isLockedIn, setIsLockedIn] = useState<boolean>(false);
@@ -46,13 +57,103 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
     selectedKeyRef.current = selectedKey;
   }, [selectedKey]);
 
-  // Reset on question change
+  // Reset on question change & orchestrate cinematic GSAP entrance
   useEffect(() => {
     setSelectedKey(null);
     selectedKeyRef.current = null;
     setIsLockedIn(false);
     answerSubmittedRef.current = false;
+    setShowRoundSplash(true);
+
+    const splashTimer = setTimeout(() => {
+      setShowRoundSplash(false);
+    }, 1300);
+
+    // High-impact GSAP entry sequence
+    if (typeof window !== "undefined") {
+      // 1. Laser scanline sweep
+      if (laserScanRef.current) {
+        gsap.fromTo(
+          laserScanRef.current,
+          { top: "0%", opacity: 0.95 },
+          { top: "100%", opacity: 0, duration: 0.65, ease: "power1.inOut" }
+        );
+      }
+
+      // 2. Cabinet punch
+      if (cabinetRef.current) {
+        gsap.fromTo(
+          cabinetRef.current,
+          { scale: 0.992 },
+          { scale: 1, duration: 0.35, ease: "power2.out" }
+        );
+      }
+
+      // 3. Prompt header glide
+      if (promptHeaderRef.current) {
+        gsap.fromTo(
+          promptHeaderRef.current,
+          { y: -16, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.45, ease: "power3.out", delay: 0.08 }
+        );
+      }
+
+      // 4. Telemetry bar entrance
+      if (telemetryBarRef.current) {
+        gsap.fromTo(
+          telemetryBarRef.current,
+          { opacity: 0, y: 8 },
+          { opacity: 1, y: 0, duration: 0.35, ease: "power2.out", delay: 0.14 }
+        );
+      }
+
+      // 5. Quote Box focus zoom
+      if (quoteBoxRef.current) {
+        gsap.fromTo(
+          quoteBoxRef.current,
+          { scale: 0.96, y: 16, opacity: 0 },
+          { scale: 1, y: 0, opacity: 1, duration: 0.5, ease: "power3.out", delay: 0.18 }
+        );
+      }
+
+      // 6. Option pads staggered arcade cascade
+      if (optionsGridRef.current && optionsGridRef.current.children.length > 0) {
+        gsap.fromTo(
+          optionsGridRef.current.children,
+          { y: 28, opacity: 0, scale: 0.96 },
+          {
+            y: 0,
+            opacity: 1,
+            scale: 1,
+            duration: 0.42,
+            stagger: 0.08,
+            ease: "back.out(1.25)",
+            delay: 0.25,
+          }
+        );
+      }
+    }
+
+    return () => clearTimeout(splashTimer);
   }, [activeQ?.id, roomState?.currentQuestionIndex]);
+
+  // Audio feedback when question reveals
+  useEffect(() => {
+    if (isReveal && activeQ?.id) {
+      const revealKey = `${activeQ.id}_reveal`;
+      if (hasPlayedRevealSoundRef.current !== revealKey) {
+        hasPlayedRevealSoundRef.current = revealKey;
+        const isUserCorrect =
+          myAnswer?.isCorrect ||
+          (!myAnswer && lockedKey && activeQ.correctAnswer && lockedKey === activeQ.correctAnswer);
+        if (isUserCorrect) {
+          _playSuccessSound();
+        } else if (lockedKey || myAnswer) {
+          _playErrorSound();
+        }
+      }
+    }
+  }, [isReveal, activeQ?.id, myAnswer, _playSuccessSound, _playErrorSound]);
 
   // Sync if server reports answer has already been submitted
   useEffect(() => {
@@ -351,13 +452,109 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
       <div style={{ maxWidth: 1440, margin: "0 auto", padding: "0 24px" }}>
         {/* STANDOUT CENTERPIECE CABINET CONTAINER */}
         <div
+          ref={cabinetRef}
+          className={displaySeconds <= 4 && !isReveal ? "arena-urgent" : ""}
           style={{
             background: "var(--void)",
             border: "2px solid var(--border)",
             boxShadow: "0 0 50px rgba(0,0,0,0.8), inset 0 0 20px rgba(0,0,0,0.6)",
             position: "relative",
+            overflow: "hidden",
+            transition: "border-color 0.3s ease, box-shadow 0.3s ease",
           }}
         >
+          {/* Animated Laser Sweep on Round Load */}
+          <div
+            ref={laserScanRef}
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              height: 3,
+              background: "linear-gradient(90deg, transparent, #00E5FF, #39FF14, #00E5FF, transparent)",
+              boxShadow: "0 0 16px #00E5FF, 0 0 28px #39FF14",
+              pointerEvents: "none",
+              zIndex: 35,
+              opacity: 0,
+            }}
+          />
+
+          {/* Holographic Round Splash Flash Banner */}
+          {showRoundSplash && (
+            <div
+              className="round-splash-anim"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "radial-gradient(ellipse at center, rgba(0, 229, 255, 0.22) 0%, rgba(2, 3, 4, 0.88) 75%)",
+                backdropFilter: "blur(4px)",
+                zIndex: 40,
+                pointerEvents: "none",
+              }}
+            >
+              <div
+                style={{
+                  border: "2px solid var(--cyan)",
+                  background: "#05070B",
+                  boxShadow: "0 0 50px rgba(0, 229, 255, 0.4), inset 0 0 30px rgba(0, 229, 255, 0.15)",
+                  padding: "24px 52px",
+                  textAlign: "center",
+                  position: "relative",
+                }}
+              >
+                <div style={{ position: "absolute", top: -3, left: -3, width: 12, height: 12, borderTop: "3px solid var(--yellow)", borderLeft: "3px solid var(--yellow)" }} />
+                <div style={{ position: "absolute", top: -3, right: -3, width: 12, height: 12, borderTop: "3px solid var(--yellow)", borderRight: "3px solid var(--yellow)" }} />
+                <div style={{ position: "absolute", bottom: -3, left: -3, width: 12, height: 12, borderBottom: "3px solid var(--yellow)", borderLeft: "3px solid var(--yellow)" }} />
+                <div style={{ position: "absolute", bottom: -3, right: -3, width: 12, height: 12, borderBottom: "3px solid var(--yellow)", borderRight: "3px solid var(--yellow)" }} />
+
+                <div
+                  className="jb"
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: "0.25em",
+                    color: "var(--cyan)",
+                    marginBottom: 6,
+                    fontWeight: 800,
+                  }}
+                >
+                  // INCOMING TRANSMISSION //
+                </div>
+                <div
+                  className="sg"
+                  style={{
+                    fontSize: "clamp(30px, 4.5vw, 48px)",
+                    fontWeight: 900,
+                    letterSpacing: "-0.03em",
+                    color: "#FFF",
+                    textShadow: "0 0 20px var(--cyan), 0 0 40px rgba(0,229,255,0.6)",
+                    lineHeight: 1,
+                  }}
+                >
+                  ROUND 0{(roomState.currentQuestionIndex ?? 0) + 1}
+                </div>
+                <div
+                  className="jb"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "var(--yellow)",
+                    letterSpacing: "0.15em",
+                    marginTop: 10,
+                  }}
+                >
+                  {activeQ.category || "WHO SAID IT?"} • IDENTIFY THE SPEAKER
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Cabinet Top Telemetry Bezel */}
           <div
             style={{
@@ -440,10 +637,39 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
             />
           </div>
 
+          {/* Critical Time Warning Ticker */}
+          {displaySeconds <= 4 && !isReveal && !effectiveLocked && (
+            <div
+              style={{
+                background: "rgba(255, 51, 75, 0.14)",
+                borderBottom: "1px solid var(--red)",
+                padding: "6px 16px",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <span className="led led-r pulse-r" />
+              <span
+                className="jb"
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: "var(--red)",
+                  letterSpacing: "0.15em",
+                }}
+              >
+                CRITICAL TIME REMAINING // SELECT AN OPTION & PRESS ENTER TO LOCK IN!
+              </span>
+            </div>
+          )}
+
           {/* Main Question & Quote Presentation Area */}
           <div style={{ padding: "36px 36px 28px" }}>
             {/* Header with Prompt & Digital Timer Display */}
             <div
+              ref={promptHeaderRef}
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -494,7 +720,7 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                   {allPlayersLockedIn && !isReveal ? "REVEALING IN" : "REMAINING"}
                 </div>
                 <div
-                  className="jb"
+                  className={`jb ${displaySeconds <= 4 && !isReveal ? "timer-pulse-urgent" : ""}`}
                   style={{
                     fontSize: 32,
                     fontWeight: 800,
@@ -508,8 +734,91 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
               </div>
             </div>
 
+            {/* Real-time Squad Telemetry Bar */}
+            <div
+              ref={telemetryBarRef}
+              style={{
+                background: "rgba(8, 10, 14, 0.7)",
+                border: "1px solid var(--border)",
+                padding: "10px 16px",
+                marginBottom: 20,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="led led-c pulse-c" />
+                  <span
+                    className="jb"
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: "var(--cyan)",
+                      letterSpacing: "0.12em",
+                    }}
+                  >
+                    SQUAD TELEMETRY
+                  </span>
+                </div>
+                <span style={{ color: "var(--border)" }}>|</span>
+                <span
+                  className="jb"
+                  style={{
+                    fontSize: 10,
+                    color: answeredPlayersCount === totalPlayers ? "var(--green)" : "var(--yellow)",
+                    fontWeight: 700,
+                  }}
+                >
+                  [ {answeredPlayersCount}/{totalPlayers} LOCKED IN ]
+                </span>
+              </div>
+
+              {/* Live Player Badges */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                {roomState?.players?.map((p: any) => {
+                  const isPlayerLocked = p.hasAnsweredCurrent || (p.id === playerId && effectiveLocked);
+                  return (
+                    <div
+                      key={p.id}
+                      className="jb"
+                      style={{
+                        fontSize: 10,
+                        background: isPlayerLocked ? "rgba(57,255,20,0.1)" : "rgba(255,255,255,0.03)",
+                        border: `1px solid ${isPlayerLocked ? "var(--green)" : "rgba(255,255,255,0.12)"}`,
+                        color: isPlayerLocked ? "var(--green)" : "var(--muted)",
+                        padding: "3px 8px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        transition: "all 0.2s ease",
+                        boxShadow: isPlayerLocked ? "0 0 10px rgba(57,255,20,0.2)" : "none",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: "50%",
+                          background: isPlayerLocked ? "var(--green)" : "var(--yellow)",
+                          display: "inline-block",
+                        }}
+                        className={isPlayerLocked ? "pulse-g" : "pulse-y"}
+                      />
+                      <span>{p.displayName || p.name || "Player"}</span>
+                      <span style={{ fontWeight: 800 }}>{isPlayerLocked ? "✔" : "⏱"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Expansive Heroic Mystery Quote Box */}
             <div
+              ref={quoteBoxRef}
               style={{
                 background: "#020304",
                 border: "1px solid var(--border)",
@@ -519,6 +828,10 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                 position: "relative",
               }}
             >
+              {/* Corner brackets */}
+              <div style={{ position: "absolute", top: -1, right: -1, width: 8, height: 8, borderTop: "1px solid var(--green)", borderRight: "1px solid var(--green)" }} />
+              <div style={{ position: "absolute", bottom: -1, right: -1, width: 8, height: 8, borderBottom: "1px solid var(--green)", borderRight: "1px solid var(--green)" }} />
+
               <div
                 className="jb"
                 style={{
@@ -546,6 +859,7 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
 
             {/* 4 Large Responsive Option Pads (A, B, C, D) */}
             <div
+              ref={optionsGridRef}
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
@@ -596,6 +910,7 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                   <button
                     key={opt.key}
                     type="button"
+                    className="trivia-option-pad"
                     onClick={() => {
                       if (!effectiveLocked && !isReveal) {
                         playClickSound();
@@ -610,7 +925,6 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                       padding: "20px 22px",
                       textAlign: "left",
                       cursor: effectiveLocked || isReveal ? "default" : "pointer",
-                      transition: "transform 0.1s, border-color 0.2s, background-color 0.2s",
                       position: "relative",
                       boxShadow: isMyLockedAnswer
                         ? "0 0 20px rgba(57,255,20,0.3)"
@@ -635,9 +949,23 @@ export const TriviaArena: React.FC<TriviaArenaProps> = ({
                           fontWeight: 800,
                           color: textColor,
                           letterSpacing: "0.1em",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
                         }}
                       >
-                        [{opt.key}] {opt.tag}
+                        <span
+                          style={{
+                            background: isSelectedTentatively || isMyLockedAnswer ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.08)",
+                            border: `1px solid ${borderColor}`,
+                            padding: "2px 6px",
+                            borderRadius: 2,
+                            boxShadow: "1px 1px 0 #000",
+                          }}
+                        >
+                          {opt.key}
+                        </span>
+                        <span>{opt.tag}</span>
                       </span>
                       {isSelectedTentatively && !isReveal && (
                         <span

@@ -261,54 +261,133 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({
               );
             })}
 
-            {/* Custom Chat File Drop / Upload Box */}
+            {/* Visual Prominent Divider */}
             <div
-              className="reveal-fade-up"
               style={{
-                marginTop: 4,
-                border: `1px dashed ${isCustomMode ? "var(--green)" : "var(--border)"}`,
-                background: isCustomMode ? "rgba(57,255,20,0.04)" : "#070809",
-                padding: "18px 20px",
                 display: "flex",
-                flexDirection: "column",
-                gap: 10,
+                alignItems: "center",
+                gap: 12,
+                margin: "18px 0 6px",
               }}
             >
+              <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, rgba(0,229,255,0.45), transparent)" }} />
+              <div
+                className="jb"
+                style={{
+                  fontSize: 10,
+                  color: "var(--cyan)",
+                  letterSpacing: "0.15em",
+                  fontWeight: 800,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span className="led led-c pulse-c" />
+                OR IMPORT YOUR OWN GROUP CHAT LOG
+              </div>
+              <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, rgba(0,229,255,0.45), transparent)" }} />
+            </div>
+
+            {/* Custom Chat File Drop / Upload Standout Box */}
+            <div
+              className={`reveal-fade-up ${!isCustomMode ? "uploader-glow" : ""}`}
+              style={{
+                border: isCustomMode
+                  ? "2px solid var(--green)"
+                  : "2px dashed rgba(0, 229, 255, 0.8)",
+                background: isCustomMode
+                  ? "rgba(57,255,20,0.05)"
+                  : "radial-gradient(ellipse at 50% 0%, rgba(0,229,255,0.12) 0%, #07090D 80%)",
+                padding: "22px 24px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+                position: "relative",
+                transition: "all 0.25s ease",
+              }}
+            >
+              {/* Corner Registration Neon Accents */}
+              <div style={{ position: "absolute", top: -2, left: -2, width: 10, height: 10, borderTop: "2px solid var(--cyan)", borderLeft: "2px solid var(--cyan)", pointerEvents: "none" }} />
+              <div style={{ position: "absolute", top: -2, right: -2, width: 10, height: 10, borderTop: "2px solid var(--cyan)", borderRight: "2px solid var(--cyan)", pointerEvents: "none" }} />
+              <div style={{ position: "absolute", bottom: -2, left: -2, width: 10, height: 10, borderBottom: "2px solid var(--cyan)", borderLeft: "2px solid var(--cyan)", pointerEvents: "none" }} />
+              <div style={{ position: "absolute", bottom: -2, right: -2, width: 10, height: 10, borderBottom: "2px solid var(--cyan)", borderRight: "2px solid var(--cyan)", pointerEvents: "none" }} />
+
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
                 }}
               >
-                <div
-                  className="jb"
-                  style={{
-                    fontSize: 10,
-                    color: isCustomMode ? "var(--green)" : "var(--yellow)",
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  OR LOAD YOUR OWN GROUP CHAT EXPORT
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    className="jb"
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 800,
+                      background: isCustomMode ? "var(--green)" : "var(--cyan)",
+                      color: "#000",
+                      padding: "3px 8px",
+                      letterSpacing: "0.1em",
+                    }}
+                  >
+                    {isCustomMode ? "CUSTOM CHAT LOADED" : "FEATURED INGESTION PORT"}
+                  </span>
+                  <span className="jb" style={{ fontSize: 10, color: "var(--txt)", fontWeight: 700 }}>
+                    DROP EXPORT OR BROWSE
+                  </span>
                 </div>
                 {uploadStatus && (
-                  <span className="jb" style={{ fontSize: 9, color: "var(--green)" }}>
-                    {uploadStatus}
+                  <span className="jb" style={{ fontSize: 9, color: "var(--green)", fontWeight: 700 }}>
+                    ● {uploadStatus}
                   </span>
                 )}
               </div>
+
               <p
                 className="jb"
                 style={{
                   fontSize: 11,
-                  color: "var(--muted)",
+                  color: "var(--txt2)",
                   margin: 0,
-                  lineHeight: 1.4,
+                  lineHeight: 1.45,
                 }}
               >
-                Upload any WhatsApp, Discord, or Telegram chat export (.txt or .json). All names and quotes are extracted automatically.
+                Upload any WhatsApp, Discord, or Telegram chat export (.txt or .json). All names and quotes are extracted automatically with zero manual editing.
               </p>
+
+              {/* Supported Chat Format Badges */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <span className="jb" style={{ fontSize: 8, color: "var(--muted)", letterSpacing: "0.08em" }}>
+                  FORMATS:
+                </span>
+                {[
+                  ["💬 WhatsApp .txt", "rgba(57,255,20,0.12)", "var(--green)"],
+                  ["🎮 Discord .json", "rgba(88,101,242,0.18)", "#7289da"],
+                  ["✈️ Telegram .json", "rgba(0,136,204,0.18)", "#00aaff"],
+                  ["📱 iMessage / CSV", "rgba(255,208,0,0.12)", "var(--yellow)"],
+                ].map(([label, bg, col]) => (
+                  <span
+                    key={label}
+                    className="jb"
+                    style={{
+                      fontSize: 8,
+                      fontWeight: 700,
+                      background: bg,
+                      color: col,
+                      border: `1px solid ${col}`,
+                      padding: "2px 6px",
+                      letterSpacing: "0.06em",
+                    }}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+
               <ArcadeChatUploader
                 onChatLoaded={(chat) => {
                   setCustomChatData(chat);

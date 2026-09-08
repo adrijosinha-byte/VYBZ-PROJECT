@@ -41,7 +41,7 @@ class SndEngine {
         if (A) this.ctx = new A();
       }
       if (this.ctx && this.ctx.state === "suspended") {
-        this.ctx.resume().catch(() => {});
+        this.ctx.resume().catch(() => { });
       }
     } catch {
       // Insecure context or browser restrictions
@@ -75,32 +75,32 @@ class SndEngine {
   click() {
     try {
       this.tone(1200, 0.04, "square", 0.08);
-    } catch {}
+    } catch { }
   }
 
   coin() {
     try {
       this.tone(987, 0.12, "square", 0.14);
       setTimeout(() => {
-        try { this.tone(1318, 0.35, "square", 0.18); } catch {}
+        try { this.tone(1318, 0.35, "square", 0.18); } catch { }
       }, 100);
-    } catch {}
+    } catch { }
   }
 
   success() {
     try {
       [523, 659, 784, 1046].forEach((f, i) =>
         setTimeout(() => {
-          try { this.tone(f, 0.22, "triangle", 0.14); } catch {}
+          try { this.tone(f, 0.22, "triangle", 0.14); } catch { }
         }, i * 75)
       );
-    } catch {}
+    } catch { }
   }
 
   error() {
     try {
       this.tone(140, 0.32, "sawtooth", 0.18);
-    } catch {}
+    } catch { }
   }
 }
 
@@ -157,10 +157,46 @@ export default function VybzMainPage() {
       setPlayerName("");
     }
 
+    // 1. Detect if this is a page reload/refresh
+    const navEntries =
+      typeof performance !== "undefined"
+        ? performance.getEntriesByType("navigation")
+        : [];
+    const isReload =
+      (navEntries.length > 0 &&
+        (navEntries[0] as PerformanceNavigationTiming).type === "reload") ||
+      (typeof window !== "undefined" &&
+        (window.performance as any)?.navigation?.type === 1);
+
+    const wasInRoomOnReload =
+      typeof sessionStorage !== "undefined" &&
+      sessionStorage.getItem("vybz_in_room") === "true";
+
     // Check for room code query param in URL (?room=VYBZ-XXXX or ?room=XXXX)
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get("room");
-    if (roomParam) {
+
+    // If user refreshed the page while being in a room (or reloaded with ?room param),
+    // redirect them cleanly back to the landing page
+    if (isReload && (wasInRoomOnReload || Boolean(roomParam))) {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.removeItem("vybz_in_room");
+        sessionStorage.removeItem("vybz_room_code");
+      }
+      if (typeof window !== "undefined") {
+        if ("scrollRestoration" in window.history) {
+          window.history.scrollRestoration = "manual";
+        }
+        window.history.replaceState({}, "", window.location.pathname);
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        setTimeout(() => {
+          window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        }, 50);
+      }
+      setIsBootActive(false);
+      setActiveRoom(null);
+      setTelemetryStatus("● ONLINE");
+    } else if (roomParam) {
       const codeToFetch = roomParam.toUpperCase().startsWith("VYBZ-")
         ? roomParam.toUpperCase()
         : `VYBZ-${roomParam.toUpperCase()}`;
@@ -272,6 +308,44 @@ export default function VybzMainPage() {
     playerId,
   ]);
 
+  // Track active room in sessionStorage & handle beforeunload / pagehide
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (activeRoom) {
+      sessionStorage.setItem("vybz_in_room", "true");
+      const rCode = activeRoom.roomCode || activeRoom.code;
+      if (rCode) sessionStorage.setItem("vybz_room_code", rCode);
+    } else {
+      sessionStorage.removeItem("vybz_in_room");
+      sessionStorage.removeItem("vybz_room_code");
+    }
+
+    const handleBeforeUnload = () => {
+      if (activeRoom) {
+        sessionStorage.setItem("vybz_in_room", "true");
+        const rId =
+          activeRoom.roomId ||
+          activeRoom.id ||
+          activeRoom.roomCode ||
+          activeRoom.code;
+        if (rId && playerId && typeof navigator !== "undefined" && navigator.sendBeacon) {
+          navigator.sendBeacon(
+            `/api/rooms/${encodeURIComponent(rId)}/leave`,
+            JSON.stringify({ userId: playerId })
+          );
+        }
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handleBeforeUnload);
+    };
+  }, [activeRoom, playerId]);
+
   const handleBootComplete = () => {
     setIsBootActive(false);
     setTimeout(() => {
@@ -282,11 +356,23 @@ export default function VybzMainPage() {
   // Replay boot sequence cleanly without full page refresh
   const handleReboot = () => {
     snd.coin();
-    setIsBootActive(true);
-    setBootKey((k) => k + 1);
+    const rId =
+      activeRoom?.roomId || activeRoom?.id || activeRoom?.roomCode || activeRoom?.code;
+    if (rId && playerId) {
+      apiClient.leaveRoom(rId, playerId).catch(() => {});
+    }
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("vybz_in_room");
+      sessionStorage.removeItem("vybz_room_code");
+    }
     if (typeof window !== "undefined") {
+      window.history.pushState({}, "", window.location.pathname);
       window.scrollTo({ top: 0, behavior: "instant" });
     }
+    setActiveRoom(null);
+    setTelemetryStatus("● ONLINE");
+    setIsBootActive(true);
+    setBootKey((k) => k + 1);
   };
 
   // ── USER GAMEPLAY ACTIONS ────────────────────────────────────────────────
@@ -295,6 +381,11 @@ export default function VybzMainPage() {
     setActiveRoom(room);
     const code = room.roomCode || room.code;
     setTelemetryStatus(`● ROOM: ${code}`);
+
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem("vybz_in_room", "true");
+      sessionStorage.setItem("vybz_room_code", code);
+    }
 
     // Update URL query string without page reload
     if (typeof window !== "undefined") {
@@ -309,12 +400,21 @@ export default function VybzMainPage() {
   // Leave active room and return cleanly to main landing state
   const handleLeaveRoom = () => {
     snd.click();
+    const rId =
+      activeRoom?.roomId || activeRoom?.id || activeRoom?.roomCode || activeRoom?.code;
+    if (rId && playerId) {
+      apiClient.leaveRoom(rId, playerId).catch(() => {});
+    }
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("vybz_in_room");
+      sessionStorage.removeItem("vybz_room_code");
+    }
     setActiveRoom(null);
     setTelemetryStatus("● ONLINE");
     if (typeof window !== "undefined") {
       window.history.pushState({}, "", window.location.pathname);
     }
-    scrollTo("section-lobby");
+    scrollTo("section-hero");
   };
 
   const handleStartMatch = async () => {
@@ -414,48 +514,74 @@ export default function VybzMainPage() {
     let ctx: gsap.Context | null = null;
     const timer = setTimeout(() => {
       ctx = gsap.context(() => {
-        // 1. Single Element Gentle Slide-In (y: 20 -> 0, opacity: 0 -> 1)
+        // 1. Single Element Gentle Flowy Slide-In (y: 32 -> 0, opacity: 0 -> 1)
         const fadeUps = document.querySelectorAll(".reveal-fade-up");
         fadeUps.forEach((el) => {
           gsap.fromTo(
             el,
-            { opacity: 0, y: 20 },
+            { opacity: 0, y: 32 },
             {
               opacity: 1,
               y: 0,
-              duration: 0.6,
-              ease: "power2.out",
+              duration: 0.85,
+              ease: "power3.out",
+              overwrite: "auto",
               scrollTrigger: {
                 trigger: el,
                 start: "top 90%",
-                toggleActions: "play none none none",
+                end: "bottom top",
+                toggleActions: "play reverse play reverse",
               },
             }
           );
         });
 
-        // 2. Staggered Groups (stagger 0.05s)
+        // 2. Staggered Groups (flowy cascading entrance, y: 26 -> 0)
         const staggerGroups = document.querySelectorAll(".reveal-stagger-group");
         staggerGroups.forEach((group) => {
           const items = group.querySelectorAll(".reveal-stagger-item");
           if (items.length > 0) {
             gsap.fromTo(
               items,
-              { opacity: 0, y: 16 },
+              { opacity: 0, y: 26 },
               {
                 opacity: 1,
                 y: 0,
-                duration: 0.5,
-                stagger: 0.05,
-                ease: "power2.out",
+                duration: 0.75,
+                stagger: {
+                  each: 0.07,
+                  ease: "power1.out",
+                },
+                ease: "power3.out",
+                overwrite: "auto",
                 scrollTrigger: {
                   trigger: group,
                   start: "top 88%",
-                  toggleActions: "play none none none",
+                  end: "bottom top",
+                  toggleActions: "play reverse play reverse",
                 },
               }
             );
           }
+        });
+
+        // 3. Dynamic Section Spy for Telemetry Header (updates active section on scroll down & up)
+        const sections = [
+          { id: "hero", el: document.getElementById("hero") },
+          { id: "section-document", el: document.getElementById("section-document") },
+          { id: "section-lobby", el: document.getElementById("section-lobby") || document.getElementById("section-trivia-arena") },
+          { id: "section-leaderboard", el: document.getElementById("section-leaderboard") },
+        ];
+
+        sections.forEach(({ id, el }) => {
+          if (!el) return;
+          ScrollTrigger.create({
+            trigger: el,
+            start: "top 45%",
+            end: "bottom 45%",
+            onEnter: () => setActiveSectionId(id),
+            onEnterBack: () => setActiveSectionId(id),
+          });
         });
       });
     }, 120);
@@ -464,7 +590,7 @@ export default function VybzMainPage() {
       clearTimeout(timer);
       if (ctx) ctx.revert();
     };
-  }, [isMatchActive, isMatchOver]);
+  }, [isMatchActive, isMatchOver, selectedChat]);
 
   return (
     <div
@@ -786,7 +912,20 @@ export default function VybzMainPage() {
           playerId={playerId}
           onResetMatch={handleResetMatch}
           onNewChat={() => {
+            const rId =
+              activeRoom?.roomId || activeRoom?.id || activeRoom?.roomCode || activeRoom?.code;
+            if (rId && playerId) {
+              apiClient.leaveRoom(rId, playerId).catch(() => {});
+            }
+            if (typeof sessionStorage !== "undefined") {
+              sessionStorage.removeItem("vybz_in_room");
+              sessionStorage.removeItem("vybz_room_code");
+            }
+            if (typeof window !== "undefined") {
+              window.history.pushState({}, "", window.location.pathname);
+            }
             setActiveRoom(null);
+            setTelemetryStatus("● ONLINE");
             scrollTo("section-document");
           }}
           playClickSound={() => snd.click()}
